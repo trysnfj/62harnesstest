@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 2 retest of the pipeline self-correction fix. Backend: all 10 pytest tests pass (basic endpoints, chats CRUD, documents upload+list, RAG, AUTO stream, manual model, web-enabled stream, stats). /api/chat/stream now always ends with a 'done' event with non-empty content and full meta (model, category, confidence, verify_status); assistant messages are persisted; used_rag/used_web reflect actual evidence. Frontend: chat streamed a simple prompt to completion in ~4s, stage-indicator appeared then disappeared (no CLASSIFYING hang), assistant-message rendered with verify-badge ('VERIFIED · 95%') and model-badge ('GLM-4.7') and 'GENERAL CHAT' category label. Settings & Router dialog opens with router table + Performance tab. All required data-testids present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/documents", "issue": "GET with chat_id filter uses $or to include chat_id:None (global docs) — flagged in iteration_1, still present. Likely intentional but should be documented."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "pipeline.py fallback loop is correct — no partial-token duplication because chat_stream only retries before produced=True internally and pipeline only accepts a candidate after any token is produced.",
+    "server.py event_gen: 'error' branch (line 210) does NOT persist an assistant error message — if pipeline yields {'type':'error'} (all models exhausted), the message log has only the user turn. Not a blocker (frontend surfaces a toast + inline error bubble), but consider persisting an error stub for /api/stats visibility.",
+    "harness/config.build_candidates ignores the 'limit' arg by returning candidates[:limit] with default 4 — fine, but 'ministral-3:8b' (fast) is always the first fallback which is also validator, could increase load; consider role-aware ordering.",
+    "server.py list_documents $or with chat_id:None mixes global docs into every chat's sidebar — either scope strictly or document."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (streaming, badges, settings, testids all verified)"},
+  "test_credentials": "N/A (single-user, no auth)",
+  "seed_data_creation": "pytest creates TEST_ prefixed chats/docs and cleans them up.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend suite: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Full run ~50s. Ollama Cloud key rate-limits so ollama_client._SEM = Semaphore(1) serialises calls — do not fire many parallel streams. Fix from iteration_1 verified: pipeline.run_pipeline always emits a terminal 'done' or 'error' event; frontend App.js streamChat handles error events and has a 150s watchdog so it never gets stuck on CLASSIFYING.",
+  "rca_of_the_issue": "Iteration 1 root cause was: any Ollama 403/429 mid-run raised HTTPStatusError up through the pipeline and skipped the 'done' emission. Fix (verified): (1) ollama_client uses a global asyncio.Semaphore(1) + retry with backoff on 429/403/5xx/timeout and raises ModelUnavailable only after MAX_ATTEMPTS; (2) pipeline.run_pipeline wraps generation in a fallback loop over build_candidates() and validation/repair in try/except with heuristic fallback; (3) pipeline always yields 'done' (or a clean 'error' only when every model exhausted); (4) server.event_gen persists assistant message + model_runs on 'done'; (5) frontend streamChat handles 'error' events, resets watchdog per event, and shows an inline error message on abort/error so UI cannot hang on CLASSIFYING."
+}

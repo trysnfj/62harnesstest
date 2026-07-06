@@ -129,10 +129,19 @@ export default function App() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    let errored = false;
+    let watchdog = null;
+    const resetWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => { errored = true; controller.abort(); }, 150000);
+    };
+    resetWatchdog();
+
     try {
       await streamChat(
         { chat_id: chatId, message: text, mode, manual_model: manualModel, use_rag: useRag, use_web: useWeb },
         (evt) => {
+          resetWatchdog();
           if (evt.type === "status") setStage(evt.stage);
           else if (evt.type === "meta") {
             draft.meta = {
@@ -156,20 +165,43 @@ export default function App() {
             };
             setStreamMsg({ ...draft });
           } else if (evt.type === "error") {
+            errored = true;
             toast.error(evt.message || "Generation failed");
           }
         },
         controller.signal
       );
       // finalize
-      setMessages((m) => [...m, { ...draft }]);
+      if (errored && !draft.content) {
+        setMessages((m) => [...m, {
+          id: draft.id, role: "assistant",
+          content: "⚠️ The model was unavailable (rate-limited). Please try again.",
+          meta: { model: "—", verify_status: "UNCERTAIN", confidence: 0, category: "error" },
+        }]);
+      } else {
+        setMessages((m) => [...m, { ...draft }]);
+        refreshChats();
+      }
       setStreamMsg(null);
-      refreshChats();
     } catch (e) {
-      if (e.name !== "AbortError") toast.error("Stream error");
-      if (draft.content) setMessages((m) => [...m, { ...draft }]);
+      if (e.name === "AbortError" && !errored) {
+        // user pressed Stop — keep partial
+        if (draft.content) setMessages((m) => [...m, { ...draft }]);
+      } else {
+        toast.error("Connection lost. Please retry.");
+        if (draft.content) {
+          setMessages((m) => [...m, { ...draft }]);
+        } else {
+          setMessages((m) => [...m, {
+            id: draft.id, role: "assistant",
+            content: "⚠️ Something went wrong. Please try again.",
+            meta: { model: "—", verify_status: "UNCERTAIN", confidence: 0, category: "error" },
+          }]);
+        }
+      }
       setStreamMsg(null);
     } finally {
+      if (watchdog) clearTimeout(watchdog);
       setStreaming(false);
       setStage(null);
       abortRef.current = null;

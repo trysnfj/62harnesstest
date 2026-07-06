@@ -56,6 +56,21 @@ async def validate(user_message, draft, citations_required=False, evidence_provi
     return result
 
 
+def heuristic_validate(draft, citations_required=False):
+    """Fallback validation with no LLM call (used for simple chats or when the
+    LLM validator itself is unavailable)."""
+    empty = not (draft or "").strip()
+    has_cit = "[S" in (draft or "")
+    return {
+        "addresses_question": not empty,
+        "has_required_citations": has_cit or not citations_required,
+        "hallucination_risk": "low",
+        "ignored_evidence": bool(citations_required and not has_cit),
+        "issues": [] if not empty else ["empty answer"],
+        "needs_repair": bool(citations_required and not has_cit) or empty,
+    }
+
+
 async def repair(model, original_messages, draft, validation):
     """Ask the same model to repair its draft given validator feedback."""
     issues = "; ".join(validation.get("issues", [])) or "quality/citation issues"
