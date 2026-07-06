@@ -1,0 +1,21 @@
+{
+  "summary": "Iteration 4 verifies the DIVERSE ROUTING fix ('only uses glm-4.7' bug). Added TestDiverseRouting to backend_test.py which runs the 5 required prompts sequentially in fresh chats and asserts (a) categories match the heuristic classifier, (b) >=4 of 5 categories resolve to DISTINCT models, (c) coding & general are not both glm-4.7 (no 403 collapse), (d) role labels are correct. Observed routing: coding->qwen3-coder-next(coding), creative->gemma4:31b(creative), reasoning->nemotron-3-super(reasoning), summarisation->gemma3:27b(summarization), general->gemma3:12b(fast). All 5 DISTINCT models. All streams terminated with 'done' - no errors, no hangs, none fell back to glm-4.7. Full pytest suite: 15/15 PASS in ~91s (includes prior tests: manual mode picks target model, independent cross-model validator for reasoning, heuristic validator for general chat, RAG w/ doc-source citation containing document password, web search, 34-model catalog including gpt-oss:20b/120b/qwen3-coder:480b, stats). Frontend smoke: coding prompt in AUTO mode streamed to qwen3-coder-next (model-badge shown, verify-badge 'Verified 95%'), stage indicator cleared cleanly (no CLASSIFYING/GENERATING hang), no error banners. Manual mode dropdown still lists all cloud models via data-testid model-option-*.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "harness/ollama_client.py: RETRY_STATUS correctly limited to {429,500,502,503,504} - 403 now fails fast so the pipeline switches models instead of collapsing to the same fallback. Verified in practice: subscription-only models (deepseek-v4-flash, deepseek-v3.2, gemini-3-flash-preview) are absent from AUTO routing.",
+    "harness/config.MODEL_ROLES is now genuinely diverse across roles (fast/coding/reasoning/summarization/creative/general/technical use 5 different models). CATEGORY_TO_ROLE fans out each category to a distinct role. Good separation of concerns.",
+    "harness/pipeline.build_candidates fallback list is diverse and subscription-free; if primary is 429, the next candidate is a different model (not another glm-4.7 duplicate). Observed one run where coding briefly fell back to minimax-m2.5 due to transient 429 on qwen3-coder-next - still not glm-4.7, so the fix holds under load.",
+    "Nit: pipeline emits an extra 'meta' event on every fallback switch. Frontend handles this fine (updates model badge) but this could be noted in the API doc."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (smoke: model-badge=qwen3-coder-next, no hang, no error)"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "Per-prompt TEST_route_<cat> chats created and deleted in-test; TEST_pytest_chat + TEST_ doc cleaned up by module fixtures.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml (~90-120s serialized on rate-limited key). Diverse routing observations may vary slightly under load (fallback can substitute e.g. minimax-m2.5 for qwen3-coder-next on transient 429) - test asserts >=4 distinct models and role correctness rather than exact model==primary, so it's stable. Never expect glm-4.7 for coding or general.",
+  "rca_of_the_issue": "Original bug: 403 subscription errors from deepseek/gemini paid models were being retried in ollama_client and MODEL_ROLES had most categories pointing to glm-4.7, so after retries exhausted, the fallback loop landed on glm-4.7 for essentially every category. Fix (verified): (1) removed 403 from RETRY_STATUS -> fail fast; (2) diversified MODEL_ROLES so each category starts on a distinct subscription-free model; (3) FALLBACK_MODELS ordered as diverse subscription-free models. Repro no longer occurs - the 5 canonical prompts route to 5 distinct models."
+}
