@@ -1,0 +1,39 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "fonts": {
+    "heading": "Chivo",
+    "body": "IBM Plex Sans",
+    "mono": "IBM Plex Mono",
+    "import_url": "https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+  },
+  "colors": {
+    "background": "bg-zinc-50",
+    "foreground": "text-zinc-950",
+    "sidebar": "bg-zinc-100",
+    "primary": "bg-blue-600",
+    "primary_text": "text-white",
+    "accent_blue": "text-blue-600",
+    "accent_yellow": "bg-yellow-400 text-black",
+    "border": "border-zinc-300",
+    "hover_bg": "hover:bg-zinc-200/50",
+    "user_message_bg": "bg-zinc-200",
+    "bot_message_bg": "bg-white",
+    "badge_bg": "bg-zinc-100 border-zinc-200"
+  },
+  "layout": {
+    "style": "sharp",
+    "border_radius": "rounded-sm",
+    "sidebar_width": "w-72",
+    "max_width_chat": "max-w-4xl"
+  },
+  "components": {
+    "badges": "font-mono text-xs px-2 py-1 border rounded-sm uppercase tracking-wider",
+    "buttons": "rounded-sm font-medium transition-all duration-200 active:scale-[0.98]",
+    "input_area": "bg-white border border-zinc-300 rounded-sm shadow-sm p-4 relative"
+  },
+  "motion": {
+    "transition": "transition-all duration-200 ease-out"
+  },
+  "instructions_to_main_agent": "Use Chivo for headings and IBM Plex Sans for body text. All model names and technical metadata must use IBM Plex Mono. Implement a high-contrast, technical 'Swiss' aesthetic with stark borders and minimal shadows. Ensure the sidebar has a solid right border (border-zinc-300). Input area should support drag-and-drop or a file upload button. Display AI verification status using badges (e.g., 'VERIFIED' in green/blue or 'UNCERTAIN' in yellow)."
+}
