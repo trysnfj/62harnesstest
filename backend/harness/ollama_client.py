@@ -24,7 +24,9 @@ HEADERS = {"Authorization": f"Bearer {OLLAMA_API_KEY}"}
 
 # Serialise all calls on this key to avoid "too many concurrent requests".
 _SEM = asyncio.Semaphore(1)
-RETRY_STATUS = {429, 403, 500, 502, 503, 504}
+# Only genuinely transient statuses are retried. 403 (subscription/permission)
+# and 404 are permanent -> fail fast so the pipeline can switch models.
+RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_ATTEMPTS = 4
 
 

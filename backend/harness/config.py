@@ -7,40 +7,39 @@ back through FALLBACK_MODELS (self-correction).
 """
 
 MODEL_ROLES = {
-    "fast": "ministral-3:8b",       # fast, cheap simple chat
-    "general": "glm-4.7",           # strong all-round
-    "coding": "qwen3-coder:480b",   # code-specialised
-    "reasoning": "deepseek-v4-flash",  # fast reasoning
-    "long_context": "glm-4.7",      # long document Q&A
-    "summarization": "ministral-3:8b",
-    "factual": "glm-4.7",           # paired with web verification
-    "creative": "glm-4.7",
+    "fast": "gemma3:12b",            # very fast simple chat
+    "general": "gpt-oss:20b",        # strong all-round
+    "coding": "qwen3-coder-next",    # code-specialised
+    "reasoning": "nemotron-3-super", # reasoning-oriented
+    "long_context": "minimax-m2.5",  # long document Q&A
+    "summarization": "gemma3:27b",
+    "factual": "glm-4.7",            # paired with web verification
+    "creative": "gemma4:31b",
     "legal": "glm-4.7",
-    "business": "glm-4.7",
-    "technical": "glm-4.7",
-    "validator": "ministral-3:8b",  # fast output validation
+    "business": "nemotron-3-super",
+    "technical": "gpt-oss:20b",
+    "validator": "glm-4.7",          # default validator
 }
 
-# Ordered by reliability + speed. Used for automatic fallback / self-correction.
+# Ordered reliable, subscription-free, diverse models for fallback / self-correction.
 FALLBACK_MODELS = [
-    "ministral-3:8b",
-    "glm-4.7",
-    "qwen3-coder:480b",
-    "gpt-oss:20b",
     "gemma3:12b",
+    "gpt-oss:20b",
+    "glm-4.7",
+    "qwen3-coder-next",
+    "gemma4:31b",
+    "nemotron-3-super",
+    "ministral-3:8b",
 ]
 
-# Preferred models for INDEPENDENT validation (cross-model verification).
-# Ordered by capability + reliability. The harness auto-selects the best one
-# that differs from the model that drafted the answer.
+# Preferred INDEPENDENT validators (cross-model verification). Capable + free.
 VALIDATOR_POOL = [
     "glm-4.7",
-    "gemma4:31b",
-    "deepseek-v4-flash",
     "gpt-oss:20b",
-    "ministral-3:8b",
-    "glm-5.2",
-    "qwen3.5:397b",
+    "nemotron-3-super",
+    "gemma4:31b",
+    "gemma3:27b",
+    "minimax-m2.5",
 ]
 
 CATEGORY_TO_ROLE = {
