@@ -1,0 +1,66 @@
+{
+  "summary": "First test iteration after MVP build. Backend passes basic endpoints (models/config/chats/documents/stats) but critical /api/chat/stream pipeline crashes intermittently mid-run with Ollama Cloud 403 Forbidden during the validate step, so no 'done' SSE event is emitted, no assistant message is persisted, and the frontend shows an empty assistant bubble stuck on 'CLASSIFYING…'. Frontend renders correctly with all required data-testids and settings dialog works.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/chat/stream",
+        "issue": "Pipeline crashes with httpx.HTTPStatusError 403 Forbidden from https://ollama.com/api/chat during the validate (and sometimes generate) step. The exception bubbles up in event_gen and only an {'type':'error'} SSE line is sent (or the client sees the stream end early with no 'done'). Consequently: (a) 3 of 4 streaming tests fail with no done event; (b) assistant message is NOT persisted; (c) model_runs / stats are not updated; (d) frontend shows an empty assistant message with no error toast. Repro: POST /api/chat/stream with any simple prompt in auto mode. Backend log shows repeatedly: 'POST https://ollama.com/api/chat HTTP/1.1 403 Forbidden' from harness/ollama_client.py:40 raise_for_status. First LLM call (classifier) returns 200, then a subsequent call (validator or generator) returns 403. Likely rate-limit/quota on some models (validator uses gpt-oss:20b same as classifier so more likely per-key concurrent-request or per-model policy).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/documents",
+        "issue": "list_documents with chat_id filter uses {'$or':[{'chat_id':chat_id},{'chat_id':None}]} so global (chat_id=None) documents show up in every chat's sidebar — may be intentional but worth confirming."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ChatMessage / streaming",
+        "issue": "When the backend pipeline errors out mid-stream (403), the UI shows an empty assistant bubble with a lingering CLASSIFYING… stage indicator and never surfaces any error to the user. No toast, no retry, no error state.",
+        "selector": "[data-testid=\"assistant-message\"], [data-testid=\"stage-indicator\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Chat send -> SSE stream",
+        "issue": "Frontend does not handle the {'type':'error'} SSE event or an unexpected stream close. streamChat in App.js needs to surface a user-visible error and stop the stage indicator.",
+        "affected_selectors": ["[data-testid=\"stage-indicator\"]", "[data-testid=\"assistant-message\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix harness/pipeline.py so that a 403/5xx from Ollama during validate does not abort the whole pipeline: wrap the validator.validate/repair calls in try/except; on failure, fall back to the raw draft, set verify_status='unverified', confidence=low, and still yield the 'done' event.",
+    "Also wrap the generate loop (ollama_client.chat_stream in step 6) with a retry (1-2 attempts with small backoff) since 403 appears to be transient for the same model+key.",
+    "Investigate the intermittent 403 from Ollama Cloud: log the response body (r.text) in ollama_client.chat_stream before raise_for_status so the exact reason (rate limit vs model access vs quota) is visible. Consider using a smaller cheaper model set or adding client-side rate limiting.",
+    "Frontend App.js/streamChat: handle event.type === 'error' and premature stream close: hide stage indicator, replace empty assistant bubble with a red 'Generation failed — please retry' state; keep a Retry button.",
+    "Add a 30-60s watchdog on the frontend stream to auto-fail if no token/done arrives (currently hangs indefinitely)."
+  ],
+  "critical_code_review_comments": [
+    "harness/pipeline.py step 6 & 7-8: no error handling around ollama_client.chat_stream and validator calls — any HTTPStatusError kills the whole pipeline and no 'done' is emitted (root cause of all streaming test failures).",
+    "server.py chat_stream event_gen: after yielding {'type':'error',...} the function returns silently — the assistant message and model_runs are never persisted, so failed runs are invisible in /api/stats.",
+    "harness/ollama_client.py chat_stream: raise_for_status without capturing r.text loses the reason for 403; add logger.error(r.text) for debuggability.",
+    "server.py /api/documents GET: '$or' with chat_id=None mixes global docs into all chats — either scope strictly or document this behavior.",
+    "server.py: uses os.environ['MONGO_URL']/['DB_NAME'] with hard-fail — good. CORS_ORIGINS default '*' is fine for dev.",
+    "No 'main_agent_can_self_test' quick smoke endpoint for the pipeline (e.g., /api/chat/dry-run) — hard to debug without full SSE.",
+    "harness/pipeline.py: use_rag + has_docs check is correct, but web_evidence 'used_web' flag returned in done reflects only actual retrieved results, not whether search was attempted — may confuse UI if DuckDuckGo returns empty."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {"backend": "60% (6/10 pytest tests pass; 4 streaming tests fail due to Ollama 403 crash)", "frontend": "80% (UI loads, all testids present, settings works; streaming visibly hangs with empty assistant bubble on backend failures)"},
+  "test_credentials": "N/A (single-user, no auth)",
+  "seed_data_creation": "Created TEST_ prefixed chats/docs which are cleaned up by pytest teardown.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/backend_test.py — run with: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Streaming tests take 30-60s each; total ~3 min. The Ollama 403 error is intermittent — sometimes the first call fails, sometimes only a later call. Look at /var/log/supervisor/backend.err.log for '403 Forbidden' entries. Key files: harness/pipeline.py (needs try/except around validator), harness/ollama_client.py (needs response body logging), frontend/src/App.js streamChat (needs error event handling).",
+  "rca_of_the_issue": "RCA: Ollama Cloud returns HTTP 403 intermittently on POST /api/chat mid-pipeline (observed in backend logs after classifier 200 -> generator/validator 403). harness/ollama_client.py:40 does r.raise_for_status() which raises httpx.HTTPStatusError; this propagates up through harness/pipeline.py (unwrapped) into server.py event_gen where it is caught and yielded as {'type':'error'} — but no 'done' event follows and neither the assistant message nor the model_runs entry is persisted. Frontend streamChat handler in App.js does not react to the 'error' type nor to the premature stream close, so the UI is left with an empty assistant bubble and a stuck 'CLASSIFYING…' stage indicator. Mitigation: (1) wrap validator/repair in try/except and degrade gracefully to the raw draft, still yielding 'done'; (2) retry chat_stream once on 403/5xx; (3) frontend handle 'error' and stream-close by showing an error state and hiding stage indicator; (4) log response body to identify why Ollama returns 403 (quota vs model access vs concurrent request limit)."
+}
