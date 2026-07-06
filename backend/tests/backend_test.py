@@ -286,6 +286,82 @@ class TestIndependentValidator:
         assert m["meta"]["validator_model"] != m["meta"]["model"]
 
 
+# ---------------- Iteration 4: Diverse routing (primary bug fix) ----------------
+class TestDiverseRouting:
+    """Verify AUTO mode routes DIFFERENT categories to DIFFERENT models.
+    The user complaint was that everything collapsed to glm-4.7 (because 403
+    subscription errors were retried & fell back). This test enforces diversity.
+    """
+
+    PROMPTS = [
+        ("coding", "Write a python function to reverse a linked list"),
+        ("creative writing", "Write a short poem about the ocean"),
+        ("reasoning", "If a train travels 60km in 45 minutes what is its speed? Reason step by step"),
+        ("summarisation", "Summarise the causes of World War 1 in 3 bullets"),
+        ("general chat", "hey how are you"),
+    ]
+
+    def test_diverse_routing_across_categories(self, chat_id):
+        results = []
+        for expected_cat, prompt in self.PROMPTS:
+            # fresh chat per prompt so history doesn't bias classification
+            cr = requests.post(f"{API}/chats", json={"title": f"TEST_route_{expected_cat}"}, timeout=15)
+            assert cr.status_code == 200
+            cid = cr.json()["id"]
+            try:
+                payload = {
+                    "chat_id": cid, "message": prompt, "mode": "auto",
+                    "use_rag": False, "use_web": False,
+                }
+                events = _run_stream(payload)
+                done = [e for e in events if e["type"] == "done"]
+                err = [e for e in events if e["type"] == "error"]
+                assert not err, f"[{expected_cat}] pipeline error: {err}"
+                assert done, f"[{expected_cat}] no done event"
+                d = done[0]
+                results.append({
+                    "expected_cat": expected_cat,
+                    "prompt": prompt,
+                    "category": d.get("category"),
+                    "model": d.get("model"),
+                    "role": d.get("role"),
+                    "content_len": len(d.get("content") or ""),
+                })
+                assert d.get("content"), f"[{expected_cat}] empty content"
+            finally:
+                requests.delete(f"{API}/chats/{cid}", timeout=15)
+
+        print("\nRouting results:")
+        for r in results:
+            print(f"  expected={r['expected_cat']:20s} -> category={r['category']:24s} model={r['model']:22s} role={r['role']}")
+
+        # 1. Categories must match (heuristic classifier is deterministic)
+        for r in results:
+            assert r["category"] == r["expected_cat"], \
+                f"expected category {r['expected_cat']} got {r['category']} for prompt {r['prompt']!r}"
+
+        # 2. Diversity: at least 4 of 5 must be distinct models
+        used_models = [r["model"] for r in results]
+        distinct = set(used_models)
+        assert len(distinct) >= 4, \
+            f"routing collapsed - only {len(distinct)} distinct models across 5 categories: {used_models}"
+
+        # 3. No 403 collapse: coding and general_chat should NOT both be glm-4.7
+        coding_model = next(r["model"] for r in results if r["expected_cat"] == "coding")
+        general_model = next(r["model"] for r in results if r["expected_cat"] == "general chat")
+        assert not (coding_model == "glm-4.7" and general_model == "glm-4.7"), \
+            f"403 collapse: coding & general both = glm-4.7 ({coding_model}, {general_model})"
+
+        # 4. Loosely check role-appropriate models were chosen (they can fall back
+        #    if the primary is temporarily unavailable, but not to a wildly wrong role).
+        coding_r = next(r for r in results if r["expected_cat"] == "coding")
+        assert coding_r["role"] == "coding", f"coding routed to role={coding_r['role']}"
+        reasoning_r = next(r for r in results if r["expected_cat"] == "reasoning")
+        assert reasoning_r["role"] == "reasoning"
+        creative_r = next(r for r in results if r["expected_cat"] == "creative writing")
+        assert creative_r["role"] == "creative"
+
+
 # ---------------- Stats ----------------
 class TestStats:
     def test_stats(self):
