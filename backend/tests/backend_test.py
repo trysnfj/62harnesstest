@@ -213,6 +213,79 @@ class TestDocumentsAndRAG:
             f"answer did not reference document content: {d['content'][:300]}"
 
 
+# ---------------- Iteration 3: Independent validator + full catalog ----------------
+class TestModelsCatalog:
+    def test_models_full_catalog(self):
+        r = requests.get(f"{API}/models", timeout=30)
+        assert r.status_code == 200
+        models = r.json()["models"]
+        # Expect a large catalog (~34 models) with well-known variants
+        assert len(models) >= 20, f"expected many models, got {len(models)}: {models}"
+        # A few representative models that should appear
+        for expected in ["gpt-oss:20b", "gpt-oss:120b", "qwen3-coder:480b"]:
+            assert expected in models, f"missing expected model {expected} in catalog"
+
+
+class TestIndependentValidator:
+    def test_validator_model_present_and_differs(self, chat_id):
+        payload = {
+            "chat_id": chat_id,
+            "message": "Why is the sky blue? Explain step by step.",
+            "mode": "auto",
+            "use_rag": False,
+            "use_web": False,
+        }
+        events = _run_stream(payload)
+        types = [e["type"] for e in events]
+        done = [e for e in events if e["type"] == "done"]
+        assert done, f"no done event; types={types}"
+        d = done[0]
+        assert d["content"], "empty answer"
+        assert "validator_model" in d, f"no validator_model key in done: {d.keys()}"
+        vm = d["validator_model"]
+        # For reasoning category deep validation must run -> real model (not 'heuristic')
+        assert vm and vm != "heuristic", f"expected real validator model, got {vm!r}"
+        assert vm != d["model"], f"validator {vm} must differ from drafting model {d['model']} (cross-model)"
+        # confidence + verify_status
+        assert "verify_status" in d
+        assert "confidence" in d
+
+        # A validate status message that references the validator model should appear
+        statuses = [e for e in events if e["type"] == "status" and e.get("stage") == "validate"]
+        assert statuses, "no validate status stage emitted"
+        assert any(vm in (s.get("message") or "") for s in statuses), \
+            f"validate status did not reference validator model {vm}: {[s.get('message') for s in statuses]}"
+
+    def test_general_chat_heuristic_validator(self, chat_id):
+        """Simple greeting -> fast route, no deep validation -> validator_model=='heuristic'."""
+        payload = {
+            "chat_id": chat_id,
+            "message": "hi there!",
+            "mode": "auto",
+            "use_rag": False,
+            "use_web": False,
+        }
+        events = _run_stream(payload)
+        done = [e for e in events if e["type"] == "done"]
+        assert done
+        d = done[0]
+        assert d["content"]
+        # heuristic is expected for plain general chat with no evidence
+        assert d.get("validator_model") in ("heuristic",), \
+            f"expected heuristic validator for general chat, got {d.get('validator_model')}"
+
+    def test_persisted_validator_model(self, chat_id):
+        """After the reasoning stream above, the assistant message meta must persist validator_model."""
+        msgs = requests.get(f"{API}/chats/{chat_id}/messages", timeout=15).json()
+        asst = [m for m in msgs if m["role"] == "assistant"]
+        assert asst
+        # find one with a real (non-heuristic) validator_model
+        real = [m for m in asst if (m.get("meta") or {}).get("validator_model") not in (None, "heuristic")]
+        assert real, "no persisted assistant message with an independent validator_model"
+        m = real[-1]
+        assert m["meta"]["validator_model"] != m["meta"]["model"]
+
+
 # ---------------- Stats ----------------
 class TestStats:
     def test_stats(self):

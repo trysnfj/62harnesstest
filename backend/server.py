@@ -218,6 +218,7 @@ async def chat_stream(body: SendMessage):
                 "content": final_meta["content"], "created_at": now_iso(),
                 "meta": {
                     "model": final_meta["model"], "role": final_meta["role"],
+                    "validator_model": final_meta.get("validator_model"),
                     "category": final_meta["category"], "route_reason": final_meta["route_reason"],
                     "used_rag": final_meta["used_rag"], "used_web": final_meta["used_web"],
                     "sources": final_meta["sources"], "validation": final_meta["validation"],

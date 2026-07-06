@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 3 tests independent cross-model validator + full cloud catalog. Backend: 14/14 pytest tests pass (added TestModelsCatalog and TestIndependentValidator). GET /api/models returns 34 models including gpt-oss:20b, gpt-oss:120b, qwen3-coder:480b. AUTO reasoning prompt streams SSE with a 'validate' status referencing the validator model; 'done' includes validator_model that is real and differs from the drafting model (drafting=glm-4.7, validator=gemma4:31b). Simple greeting keeps validator_model='heuristic' (expected — no evidence). Assistant meta persists validator_model. Manual mode still returns the chosen model. RAG upload+answer works and cites doc source. Web verification still returns done cleanly. Frontend: manual mode dropdown lists all 34 models via data-testid model-option-*; sending 'Why is the sky blue? Explain step by step.' shows assistant-message with model-badge='glm-4.7' AND validator-badge with text 'Verified by gemma4:31b' — cross-model verification visible in UI. Stage-indicator disappears after done (no CLASSIFYING hang). Harness trace toggle present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/documents", "issue": "GET with chat_id still uses $or to include chat_id:None global docs (carried from iteration_1/2). Cosmetic."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "harness/config.choose_validator correctly falls back to any-different available model if VALIDATOR_POOL is exhausted; only returns draft_model when no alternative exists — safe.",
+    "pipeline.py sets validator_model='heuristic' when the LLM validator itself is unavailable; UI hides the badge in that case which is correct.",
+    "validator.repair re-validates with (validator_model if != 'heuristic' else used_model) — logical, but if the initial validator was heuristic and repair happens, this uses the drafting model to re-check, which loses cross-model verification. Rare path (heuristic rarely flags needs_repair) but worth noting.",
+    "build_candidates(limit=5) is passed in pipeline but signature defaults to 4 — pipeline correctly overrides. No bug."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (manual catalog 34 models, cross-model validator-badge, no hang)"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "TEST_pytest_chat + TEST_ doc; cleaned up by fixtures.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml (~2.5min due to serialized rate-limited key). Validator badge test key: for reasoning/factual/research/document Q&A/legal/business (or any RAG/web-grounded answer), done.validator_model is a real Ollama model != done.model. For plain general chat, validator_model=='heuristic' (expected).",
+  "rca_of_the_issue": "N/A — feature working as designed."
+}

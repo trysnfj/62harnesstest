@@ -159,6 +159,7 @@ export default function App() {
             draft.content = evt.content;
             draft.meta = {
               model: evt.model, role: evt.role, category: evt.category, route_reason: evt.route_reason,
+              validator_model: evt.validator_model,
               used_rag: evt.used_rag, used_web: evt.used_web, sources: evt.sources,
               validation: evt.validation, repaired: evt.repaired, confidence: evt.confidence,
               verify_status: evt.verify_status,

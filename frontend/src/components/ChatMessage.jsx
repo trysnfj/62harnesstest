@@ -94,6 +94,9 @@ export function ChatMessage({ msg, streaming }) {
             {meta.repaired && (
               <Badge testid="repaired-badge"><Wrench className="w-3 h-3" /> Self-repaired</Badge>
             )}
+            {meta.validator_model && meta.validator_model !== "heuristic" && (
+              <Badge testid="validator-badge"><ShieldCheck className="w-3 h-3" /> Verified by {meta.validator_model}</Badge>
+            )}
           </div>
         )}
 

@@ -30,6 +30,19 @@ FALLBACK_MODELS = [
     "gemma3:12b",
 ]
 
+# Preferred models for INDEPENDENT validation (cross-model verification).
+# Ordered by capability + reliability. The harness auto-selects the best one
+# that differs from the model that drafted the answer.
+VALIDATOR_POOL = [
+    "glm-4.7",
+    "gemma4:31b",
+    "deepseek-v4-flash",
+    "gpt-oss:20b",
+    "ministral-3:8b",
+    "glm-5.2",
+    "qwen3.5:397b",
+]
+
 CATEGORY_TO_ROLE = {
     "general chat": "fast",
     "coding": "coding",
@@ -65,10 +78,28 @@ def resolve_model(role: str) -> str:
     return MODEL_ROLES.get(role, MODEL_ROLES["general"])
 
 
-def build_candidates(primary: str, limit: int = 4):
-    """Ordered list of models to try: primary first, then reliable fallbacks."""
+def build_candidates(primary: str, limit: int = 4, available=None):
+    """Ordered list of models to try: primary first, then reliable fallbacks,
+    then any other available cloud model (so the harness can reach ALL models)."""
     candidates = [primary]
     for m in FALLBACK_MODELS:
         if m not in candidates:
             candidates.append(m)
+    if available:
+        for m in available:
+            if m not in candidates:
+                candidates.append(m)
     return candidates[:limit]
+
+
+def choose_validator(draft_model: str, available=None):
+    """Auto-select the most appropriate INDEPENDENT model to validate the answer.
+    Prefers a capable, reliable model that differs from the drafting model
+    (cross-model verification)."""
+    for m in VALIDATOR_POOL:
+        if m != draft_model and (not available or m in available):
+            return m
+    for m in (available or []):
+        if m != draft_model:
+            return m
+    return draft_model

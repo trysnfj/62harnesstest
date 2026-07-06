@@ -9,7 +9,8 @@ _VALIDATOR_SYSTEM = (
 )
 
 
-async def validate(user_message, draft, citations_required=False, evidence_provided=False):
+async def validate(user_message, draft, citations_required=False, evidence_provided=False, model=None):
+    model = model or MODEL_ROLES["validator"]
     prompt = (
         f"User question:\n\"\"\"\n{user_message}\n\"\"\"\n\n"
         f"Draft answer:\n\"\"\"\n{draft}\n\"\"\"\n\n"
@@ -23,7 +24,7 @@ async def validate(user_message, draft, citations_required=False, evidence_provi
         '  "needs_repair": true/false'
     )
     result = await ollama_client.chat_json(
-        MODEL_ROLES["validator"],
+        model,
         [
             {"role": "system", "content": _VALIDATOR_SYSTEM},
             {"role": "user", "content": prompt},

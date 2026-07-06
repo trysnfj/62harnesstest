@@ -7,6 +7,7 @@ Reliability features:
 """
 import os
 import json
+import time
 import asyncio
 import logging
 import httpx
@@ -36,6 +37,24 @@ async def list_models():
         r = await c.get(f"{OLLAMA_HOST}/api/tags", headers=HEADERS)
         r.raise_for_status()
         return [m["name"] for m in r.json().get("models", [])]
+
+
+_MODELS_CACHE = {"ts": 0.0, "models": []}
+
+
+async def get_available_models(ttl=300):
+    """Cached list of ALL available Ollama cloud models."""
+    now = time.time()
+    if _MODELS_CACHE["models"] and (now - _MODELS_CACHE["ts"] < ttl):
+        return _MODELS_CACHE["models"]
+    try:
+        models = await list_models()
+        if models:
+            _MODELS_CACHE["models"] = models
+            _MODELS_CACHE["ts"] = now
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"get_available_models failed: {e}")
+    return _MODELS_CACHE["models"]
 
 
 async def chat(model, messages, options=None, timeout=150):
