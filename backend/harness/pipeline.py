@@ -16,8 +16,8 @@ Yields SSE-friendly event dicts:
   {"type": "error", "message": ...}
 """
 import logging
-from . import classifier, router, rag, websearch, prompt_compiler, validator, ollama_client
-from .config import build_candidates, choose_validator
+from . import classifier, router, rag, websearch, prompt_compiler, validator, ollama_client, critique
+from .config import build_candidates, choose_validator, pick_ensemble
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ _DEEP_VALIDATE_CATEGORIES = {
 }
 
 
-async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, chunk_docs):
+async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, use_multi, chunk_docs):
     has_docs = bool(chunk_docs)
 
     # 1. Classify (intelligent LLM classification, heuristic fallback)
@@ -56,60 +56,132 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
         web_evidence = await websearch.search(user_message, max_results=5)
 
     # 5. Compile prompt
-    messages, sources = prompt_compiler.compile_prompt(
+    messages, sources, evidence_text = prompt_compiler.compile_prompt(
         user_message, classification, doc_chunks=retrieved, web_evidence=web_evidence, history=history
     )
-
-    # 6. Generate draft with automatic model fallback (self-correction)
+    citations_required = bool(sources)
+    evidence_provided = bool(retrieved or web_evidence)
     available = await ollama_client.get_available_models()
-    candidates = build_candidates(model, limit=5, available=available) if mode != "manual" else [model]
+
+    # 6. Generate the answer.
     draft = ""
     used_model = model
-    generated = False
-    last_err = None
+    ensemble_meta = None
 
-    for idx, cand in enumerate(candidates):
-        if idx > 0:
-            yield {"type": "status", "stage": "generate",
-                   "message": f"'{candidates[idx-1]}' unavailable — switching to {cand}..."}
-            yield {"type": "meta", "classification": classification,
-                   "model": cand, "role": role,
-                   "route_reason": f"{route_reason} (auto-switched: previous model unavailable)"}
-        else:
-            yield {"type": "status", "stage": "generate", "message": f"Generating with {cand}..."}
+    if use_multi:
+        # ---- Multi-model critique ensemble (draft -> critique -> fact-check -> finalize) ----
+        drafter, critic_m, verifier_m, finalizer = pick_ensemble(model, available)
 
-        draft = ""
-        produced = False
+        yield {"type": "status", "stage": "draft", "message": f"Drafting with {drafter}..."}
         try:
-            async for tok in ollama_client.chat_stream(cand, messages):
-                produced = True
-                draft += tok
-                yield {"type": "token", "text": tok}
-            used_model = cand
-            generated = True
-            break
+            drafter_used, draft = await ollama_client.chat_with_fallback(
+                build_candidates(drafter, 4, available), messages)
+        except Exception:  # noqa: BLE001
+            yield {"type": "error", "message": "All models are currently unavailable. Please retry."}
+            return
+
+        yield {"type": "status", "stage": "critique", "message": f"Critiquing with {critic_m}..."}
+        critique_text = ""
+        critic_used = critic_m
+        try:
+            critic_used, critique_text = await ollama_client.chat_with_fallback(
+                build_candidates(critic_m, 3, available), critique.critique_msgs(user_message, draft))
         except Exception as e:  # noqa: BLE001
-            last_err = e
-            logger.warning(f"generation failed on {cand}: {e}")
-            if produced:  # partial output already streamed — accept it
+            logger.warning(f"critique step skipped: {e}")
+
+        yield {"type": "status", "stage": "factcheck", "message": f"Fact-checking with {verifier_m}..."}
+        verify_text = ""
+        verifier_used = verifier_m
+        try:
+            verifier_used, verify_text = await ollama_client.chat_with_fallback(
+                build_candidates(verifier_m, 3, available),
+                critique.verify_msgs(user_message, draft, evidence_text))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"fact-check step skipped: {e}")
+
+        final_msgs = critique.finalize_msgs(
+            user_message, draft, critique_text, verify_text, evidence_text, citations_required=citations_required)
+        yield {"type": "status", "stage": "finalize", "message": f"Synthesising final answer with {finalizer}..."}
+
+        fcands = build_candidates(finalizer, 4, available)
+        generated = False
+        for idx, cand in enumerate(fcands):
+            if idx > 0:
+                yield {"type": "status", "stage": "finalize",
+                       "message": f"'{fcands[idx-1]}' unavailable — finalising with {cand}..."}
+            draft = ""
+            produced = False
+            try:
+                async for tok in ollama_client.chat_stream(cand, final_msgs):
+                    produced = True
+                    draft += tok
+                    yield {"type": "token", "text": tok}
                 used_model = cand
                 generated = True
                 break
-            continue
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"finalize failed on {cand}: {e}")
+                if produced:
+                    used_model = cand
+                    generated = True
+                    break
+                continue
 
-    if not generated:
-        yield {"type": "error",
-               "message": "All models are currently rate-limited or unavailable. Please retry in a moment."}
-        return
+        if not generated:
+            yield {"type": "error", "message": "All models are currently unavailable. Please retry."}
+            return
 
-    # 7. Validate with an INDEPENDENT, auto-selected model (cross-model verification)
-    citations_required = bool(sources)
-    evidence_provided = bool(retrieved or web_evidence)
+        ensemble_meta = {"drafter": drafter_used, "critic": critic_used,
+                         "verifier": verifier_used, "finalizer": used_model}
+        yield {"type": "meta", "classification": classification, "model": used_model,
+               "role": "ensemble", "route_reason": "multi-model critique ensemble",
+               "ensemble": ensemble_meta}
+    else:
+        # ---- Single-model generation with automatic fallback (self-correction) ----
+        candidates = build_candidates(model, limit=5, available=available) if mode != "manual" else [model]
+        generated = False
+
+        for idx, cand in enumerate(candidates):
+            if idx > 0:
+                yield {"type": "status", "stage": "generate",
+                       "message": f"'{candidates[idx-1]}' unavailable — switching to {cand}..."}
+                yield {"type": "meta", "classification": classification,
+                       "model": cand, "role": role,
+                       "route_reason": f"{route_reason} (auto-switched: previous model unavailable)"}
+            else:
+                yield {"type": "status", "stage": "generate", "message": f"Generating with {cand}..."}
+
+            draft = ""
+            produced = False
+            try:
+                async for tok in ollama_client.chat_stream(cand, messages):
+                    produced = True
+                    draft += tok
+                    yield {"type": "token", "text": tok}
+                used_model = cand
+                generated = True
+                break
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"generation failed on {cand}: {e}")
+                if produced:
+                    used_model = cand
+                    generated = True
+                    break
+                continue
+
+        if not generated:
+            yield {"type": "error",
+                   "message": "All models are currently rate-limited or unavailable. Please retry in a moment."}
+            return
+
+    # 7. Validate with an INDEPENDENT, auto-selected model (cross-model verification).
+    # (For ensemble mode the answer was already critiqued & fact-checked by other
+    #  models, so we use the lightweight heuristic check to avoid an extra call.)
     deep = (
         evidence_provided
         or classification.get("category") in _DEEP_VALIDATE_CATEGORIES
         or classification.get("reasoning_depth") == "high"
-    )
+    ) and not use_multi
     validator_model = choose_validator(used_model, available)
     validation = None
     if deep:
@@ -152,8 +224,10 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
     confidence, verify_status = validator.compute_confidence(validation, bool(retrieved), bool(web_evidence))
 
     yield {
-        "type": "done", "content": final, "model": used_model, "role": role,
+        "type": "done", "content": final, "model": used_model,
+        "role": ("ensemble" if use_multi else role),
         "validator_model": validator_model,
+        "ensemble": ensemble_meta,
         "category": classification.get("category"), "route_reason": route_reason,
         "used_rag": bool(retrieved), "used_web": bool(web_evidence), "sources": sources,
         "validation": validation, "repaired": repaired,

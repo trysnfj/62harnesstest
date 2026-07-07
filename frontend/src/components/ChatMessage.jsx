@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Markdown } from "./Markdown";
 import {
   Cpu, Globe, FileText, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Wrench, ChevronDown, ChevronRight, User,
+  Wrench, ChevronDown, ChevronRight, User, Layers,
 } from "lucide-react";
 
 function VerifyBadge({ status, confidence }) {
@@ -87,7 +87,11 @@ export function ChatMessage({ msg, streaming }) {
         {meta && (
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
             <VerifyBadge status={meta.verify_status} confidence={meta.confidence} />
-            <Badge testid="model-badge"><Cpu className="w-3 h-3" /> {meta.model}</Badge>
+            {meta.ensemble ? (
+              <Badge testid="ensemble-badge"><Layers className="w-3 h-3" /> Ensemble · {meta.model}</Badge>
+            ) : (
+              <Badge testid="model-badge"><Cpu className="w-3 h-3" /> {meta.model}</Badge>
+            )}
             {meta.category && <Badge>{meta.category}</Badge>}
             {meta.used_rag && <Badge testid="rag-badge"><FileText className="w-3 h-3" /> RAG</Badge>}
             {meta.used_web && <Badge testid="web-badge"><Globe className="w-3 h-3" /> WEB</Badge>}
@@ -120,6 +124,18 @@ export function ChatMessage({ msg, streaming }) {
               <div className="mt-2 border border-zinc-200 rounded-sm p-3 bg-zinc-50 font-mono text-[11px] text-zinc-600 space-y-1">
                 <div><span className="text-zinc-400">route:</span> {meta.route_reason}</div>
                 <div><span className="text-zinc-400">role:</span> {meta.role}</div>
+                {meta.ensemble && (
+                  <>
+                    <div className="text-zinc-400 pt-1">multi-model ensemble:</div>
+                    <div>· drafter: {meta.ensemble.drafter}</div>
+                    <div>· critic: {meta.ensemble.critic}</div>
+                    <div>· fact-checker: {meta.ensemble.verifier}</div>
+                    <div>· finalizer: {meta.ensemble.finalizer}</div>
+                  </>
+                )}
+                {meta.validator_model && (
+                  <div><span className="text-zinc-400">validated_by:</span> {meta.validator_model}</div>
+                )}
                 {meta.validation && (
                   <>
                     <div><span className="text-zinc-400">hallucination_risk:</span> {meta.validation.hallucination_risk}</div>

@@ -78,4 +78,5 @@ def compile_prompt(user_message, classification, doc_chunks=None, web_evidence=N
         {"role": "system", "content": system},
         {"role": "user", "content": "\n".join(user_parts)},
     ]
-    return messages, sources
+    evidence_text = "\n\n".join(context_blocks)
+    return messages, sources, evidence_text

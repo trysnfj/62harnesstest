@@ -82,6 +82,22 @@ async def chat(model, messages, options=None, timeout=150):
         raise ModelUnavailable(f"{model} unavailable after {MAX_ATTEMPTS} attempts")
 
 
+async def chat_with_fallback(candidates, messages, options=None):
+    """Try each candidate model in order; return (model, content) from the first
+    that succeeds. Raises ModelUnavailable if all fail."""
+    last = None
+    for m in candidates:
+        try:
+            content = await chat(m, messages, options=options)
+            if content and content.strip():
+                return m, content
+        except Exception as e:  # noqa: BLE001
+            last = e
+            continue
+    raise ModelUnavailable(f"all candidates failed: {last}")
+
+
+
 async def chat_stream(model, messages, options=None):
     """Streaming chat. Retries only before the first token is produced.
     Raises ModelUnavailable if it never produces output."""
@@ -90,10 +106,11 @@ async def chat_stream(model, messages, options=None):
         payload["options"] = options
     async with _SEM:
         last_err = None
+        stream_timeout = httpx.Timeout(connect=30.0, read=75.0, write=30.0, pool=30.0)
         for attempt in range(MAX_ATTEMPTS):
             produced = False
             try:
-                async with httpx.AsyncClient(timeout=None) as c:
+                async with httpx.AsyncClient(timeout=stream_timeout) as c:
                     async with c.stream("POST", f"{OLLAMA_HOST}/api/chat", headers=HEADERS, json=payload) as r:
                         if r.status_code != 200:
                             body = (await r.aread()).decode("utf-8", errors="ignore")

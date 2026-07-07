@@ -14,6 +14,8 @@ import {
 const STAGE_LABEL = {
   classify: "Classifying", route: "Routing", retrieve: "Retrieving docs",
   search: "Searching web", generate: "Generating", validate: "Validating", repair: "Repairing",
+  draft: "Drafting (model A)", critique: "Critiquing (model B)",
+  factcheck: "Fact-checking (model C)", finalize: "Finalizing (best model)",
 };
 
 export default function App() {
@@ -31,6 +33,7 @@ export default function App() {
 
   const [useRag, setUseRag] = useState(true);
   const [useWeb, setUseWeb] = useState(false);
+  const [useMulti, setUseMulti] = useState(false);
   const [mode, setMode] = useState("auto");
   const [manualModel, setManualModel] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -139,14 +142,15 @@ export default function App() {
 
     try {
       await streamChat(
-        { chat_id: chatId, message: text, mode, manual_model: manualModel, use_rag: useRag, use_web: useWeb },
+        { chat_id: chatId, message: text, mode, manual_model: manualModel, use_rag: useRag, use_web: useWeb, use_multi: useMulti },
         (evt) => {
           resetWatchdog();
           if (evt.type === "status") setStage(evt.stage);
           else if (evt.type === "meta") {
             draft.meta = {
+              ...(draft.meta || {}),
               model: evt.model, role: evt.role, category: evt.classification?.category,
-              route_reason: evt.route_reason,
+              route_reason: evt.route_reason, ensemble: evt.ensemble || draft.meta?.ensemble,
             };
             setStreamMsg({ ...draft });
           } else if (evt.type === "token") {
@@ -159,7 +163,7 @@ export default function App() {
             draft.content = evt.content;
             draft.meta = {
               model: evt.model, role: evt.role, category: evt.category, route_reason: evt.route_reason,
-              validator_model: evt.validator_model,
+              validator_model: evt.validator_model, ensemble: evt.ensemble,
               used_rag: evt.used_rag, used_web: evt.used_web, sources: evt.sources,
               validation: evt.validation, repaired: evt.repaired, confidence: evt.confidence,
               verify_status: evt.verify_status,
@@ -303,6 +307,8 @@ export default function App() {
           setUseRag={setUseRag}
           useWeb={useWeb}
           setUseWeb={setUseWeb}
+          useMulti={useMulti}
+          setUseMulti={setUseMulti}
           mode={mode}
           setMode={setMode}
           models={models}

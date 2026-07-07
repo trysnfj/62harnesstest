@@ -103,3 +103,34 @@ def choose_validator(draft_model: str, available=None):
         if m != draft_model:
             return m
     return draft_model
+
+
+# Diverse, reliable pool for the multi-model critique ensemble.
+# Fast models first so the intermediate critique/fact-check steps stay quick;
+# the finalizer is chosen separately as the strongest reliable model.
+ENSEMBLE_POOL = [
+    "gemma3:12b", "ministral-3:8b", "gemma3:27b",
+    "gpt-oss:20b", "nemotron-3-super", "gemma4:31b", "glm-4.7",
+]
+
+
+def pick_ensemble(drafter: str, available=None):
+    """Pick (drafter, critic, verifier, finalizer) — distinct where possible.
+    Finalizer is the strongest reliable model available."""
+    pool = [m for m in ENSEMBLE_POOL if (not available or m in available)]
+
+    def nxt(exclude):
+        for m in pool:
+            if m not in exclude:
+                return m
+        return drafter
+
+    critic = nxt({drafter})
+    verifier = nxt({drafter, critic})
+    finalizer = None
+    for pref in ["gpt-oss:20b", "glm-4.7", "nemotron-3-super", "gemma4:31b"]:
+        if not available or pref in available:
+            finalizer = pref
+            break
+    finalizer = finalizer or drafter
+    return drafter, critic, verifier, finalizer

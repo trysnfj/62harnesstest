@@ -1,9 +1,9 @@
 import React, { useRef, useState } from "react";
-import { Paperclip, Globe, FileText, Send, Loader2, Square, ChevronDown } from "lucide-react";
+import { Paperclip, Globe, FileText, Send, Loader2, Square, ChevronDown, Layers } from "lucide-react";
 
 export function InputBar({
   value, onChange, onSend, onStop, streaming, uploading, onUpload,
-  useRag, setUseRag, useWeb, setUseWeb, mode, setMode,
+  useRag, setUseRag, useWeb, setUseWeb, useMulti, setUseMulti, mode, setMode,
   models, manualModel, setManualModel,
 }) {
   const fileRef = useRef(null);
@@ -68,6 +68,17 @@ export function InputBar({
             }`}
           >
             <Globe className="w-3.5 h-3.5" /> Internet
+          </button>
+
+          <button
+            data-testid="multi-toggle"
+            onClick={() => setUseMulti(!useMulti)}
+            title="Multi-model critique: draft → critique → fact-check → finalize"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-sm text-xs font-medium transition-all active:scale-[0.98] ${
+              useMulti ? "bg-yellow-400 text-black border-yellow-400" : "border-zinc-300 hover:bg-zinc-100"
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" /> Ensemble
           </button>
 
           {/* Mode toggle */}

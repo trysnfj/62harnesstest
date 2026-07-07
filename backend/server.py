@@ -58,6 +58,7 @@ class SendMessage(BaseModel):
     manual_model: Optional[str] = None
     use_rag: bool = True
     use_web: bool = False
+    use_multi: bool = False
 
 
 # ---------------- Basic ----------------
@@ -202,6 +203,7 @@ async def chat_stream(body: SendMessage):
                 manual_model=body.manual_model,
                 use_rag=body.use_rag,
                 use_web=body.use_web,
+                use_multi=body.use_multi,
                 chunk_docs=chunk_docs,
             ):
                 if event["type"] == "done":
@@ -219,6 +221,7 @@ async def chat_stream(body: SendMessage):
                 "meta": {
                     "model": final_meta["model"], "role": final_meta["role"],
                     "validator_model": final_meta.get("validator_model"),
+                    "ensemble": final_meta.get("ensemble"),
                     "category": final_meta["category"], "route_reason": final_meta["route_reason"],
                     "used_rag": final_meta["used_rag"], "used_web": final_meta["used_web"],
                     "sources": final_meta["sources"], "validation": final_meta["validation"],

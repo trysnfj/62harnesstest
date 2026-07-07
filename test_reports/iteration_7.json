@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 7 minimal scope: verified the two backend SSE requests requested. Both PASSED in 15.75s total (sequential, -n 0). (1) Ensemble multi-mode POST /api/chat/stream with use_multi=true completed in 10.5s with done event: model=gpt-oss:20b, role='ensemble', ensemble={drafter:'qwen3-coder-next', critic:'gemma3:12b', verifier:'ministral-3:8b', finalizer:'gpt-oss:20b'} - 4 distinct real models. Stages appeared in the required order classify(0.16s)->draft(0.16s)->critique(1.6s)->factcheck(6.4s)->finalize(8.4s). Content 191 chars, non-empty. done.model==ensemble.finalizer. (2) Single-mode regression with use_multi=false, message='hi' completed in 5.2s with done event: model=gemma3:12b, role=fast, ensemble=None, content 150 chars. Matches the manually-verified iteration-6 shape exactly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_ensemble.py",
+    "/app/test_reports/pytest/iter7_ensemble.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "harness/pipeline.py: ensemble branch emits stages in the exact required order (classify->draft->critique->factcheck->finalize) and populates done.ensemble with all four role keys plus role='ensemble'. Clean.",
+    "harness/config.py pick_ensemble: correctly returns four distinct models (drafter, critic, verifier, finalizer) with sensible defaults; the run produced 4 distinct real models on the first try.",
+    "server.py SendMessage.use_multi flag wires straight through to run_pipeline; done event carries ensemble metadata as spec'd."
+  ],
+  "updated_files": ["/app/backend/tests/test_ensemble.py"],
+  "success_rate": {"backend": "2/2 PASS (100%)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "TEST_ens_<uuid> and TEST_single_<uuid> chat_ids created for the two SSE calls; no cleanup required (chat records auto-created on stream).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_ensemble.py -v -s --tb=short -n 0. Both tests are sequential and fast (~15s total when the Ollama key isn't throttled). The pytest.ini enables xdist by default; use '-n 0' or rely on LoadScopeScheduling (same file -> same worker) if you need serial semantics. Ensemble finalizer done event JSON path: events[-1].ensemble.{drafter,critic,verifier,finalizer} and events[-1].role=='ensemble'.",
+  "rca_of_the_issue": "N/A - no bugs found. Both required behaviours confirmed on the first attempt matching the manually-verified shape from iteration-6."
+}

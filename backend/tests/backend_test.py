@@ -20,6 +20,7 @@ API = f"{BASE_URL}/api"
 
 # Long timeouts because pipeline runs multiple LLM calls
 STREAM_TIMEOUT = 300
+ENSEMBLE_TIMEOUT = 300  # ensemble makes 4 serialized LLM calls
 
 
 def _read_sse(resp):
@@ -34,10 +35,10 @@ def _read_sse(resp):
                 continue
 
 
-def _run_stream(payload):
+def _run_stream(payload, timeout=None):
     """POST /api/chat/stream and collect all events."""
     events = []
-    with requests.post(f"{API}/chat/stream", json=payload, stream=True, timeout=STREAM_TIMEOUT) as r:
+    with requests.post(f"{API}/chat/stream", json=payload, stream=True, timeout=timeout or STREAM_TIMEOUT) as r:
         assert r.status_code == 200, f"stream status {r.status_code}: {r.text[:300]}"
         for ev in _read_sse(r):
             events.append(ev)
@@ -369,3 +370,87 @@ class TestStats:
         assert "total_runs" in data
         assert "by_model" in data
         assert isinstance(data["by_model"], dict)
+
+
+# ---------------- Iteration 7: Multi-model critique ENSEMBLE ----------------
+class TestEnsemble:
+    """Phase 3 - multi-model critique ensemble via use_multi=true."""
+
+    def test_ensemble_stream_full_flow(self, chat_id):
+        payload = {
+            "chat_id": chat_id,
+            "message": "Tabs or spaces for Python? Give a one-line reasoned pick.",
+            "mode": "auto",
+            "use_rag": False,
+            "use_web": False,
+            "use_multi": True,
+        }
+        events = _run_stream(payload, timeout=ENSEMBLE_TIMEOUT)
+        types = [e["type"] for e in events]
+        err = [e for e in events if e["type"] == "error"]
+        assert not err, f"pipeline error: {err}"
+        # Debug view for triage
+        stage_dbg = [(e["type"], e.get("stage")) for e in events if e["type"] in ("status", "done", "error", "meta")]
+        print(f"\n[ensemble debug] total_events={len(events)} types_summary={ {t: types.count(t) for t in set(types)} }")
+        print(f"[ensemble debug] stages_and_meta={stage_dbg[:20]}")
+
+        # Ordered ensemble stages must all appear
+        stage_seq = [e.get("stage") for e in events if e["type"] == "status" and e.get("stage")]
+        expected_order = ["classify", "draft", "critique", "factcheck", "finalize"]
+        idx = -1
+        for stage in expected_order:
+            try:
+                new_idx = stage_seq.index(stage, idx + 1)
+            except ValueError:
+                raise AssertionError(f"missing/out-of-order ensemble stage {stage!r}; got {stage_seq}")
+            idx = new_idx
+
+        assert any(t == "token" for t in types), "no tokens streamed during finalize"
+        done = [e for e in events if e["type"] == "done"]
+        assert done, f"no done event; got types={types}"
+        d = done[0]
+
+        # Ensemble metadata assertions
+        assert d.get("role") == "ensemble", f"role expected 'ensemble', got {d.get('role')!r}"
+        assert d.get("content"), "empty final ensemble content"
+        ens = d.get("ensemble")
+        assert isinstance(ens, dict), f"ensemble missing in done: {d}"
+        for k in ("drafter", "critic", "verifier", "finalizer"):
+            assert ens.get(k), f"ensemble missing key {k}: {ens}"
+            assert ens[k] != "heuristic"
+        assert d["model"] == ens["finalizer"], (
+            f"top-level model {d['model']} must equal finalizer {ens['finalizer']}")
+        # At least 3 of the 4 members should be DISTINCT models
+        distinct = len({ens["drafter"], ens["critic"], ens["verifier"], ens["finalizer"]})
+        assert distinct >= 3, f"expected >=3 distinct ensemble models, got {distinct}: {ens}"
+
+        # Persistence: meta.ensemble should be saved
+        time.sleep(1)
+        msgs = requests.get(f"{API}/chats/{chat_id}/messages", timeout=15).json()
+        asst = [m for m in msgs if m["role"] == "assistant"]
+        assert asst
+        # find the assistant message whose meta.ensemble matches
+        matched = [m for m in asst if ((m.get("meta") or {}).get("ensemble") or {}).get("finalizer") == ens["finalizer"]]
+        assert matched, f"persisted meta.ensemble not found for finalizer {ens['finalizer']}"
+        stored = matched[-1]["meta"]["ensemble"]
+        for k in ("drafter", "critic", "verifier", "finalizer"):
+            assert stored.get(k) == ens[k], f"stored ensemble.{k} mismatch: {stored} vs {ens}"
+
+    def test_single_mode_regression_ensemble_null(self, chat_id):
+        """use_multi=False: still routes through single model and done.ensemble is null."""
+        payload = {
+            "chat_id": chat_id,
+            "message": "Say hello in one short line.",
+            "mode": "auto",
+            "use_rag": False,
+            "use_web": False,
+            "use_multi": False,
+        }
+        events = _run_stream(payload)
+        done = [e for e in events if e["type"] == "done"]
+        assert done
+        d = done[0]
+        assert d.get("content")
+        assert d.get("ensemble") in (None, {}), f"ensemble must be null for use_multi=false, got {d.get('ensemble')}"
+        assert d.get("role") != "ensemble"
+
