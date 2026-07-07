@@ -3,8 +3,9 @@ import { Paperclip, Globe, FileText, Send, Loader2, Square, ChevronDown, Layers 
 
 export function InputBar({
   value, onChange, onSend, onStop, streaming, uploading, onUpload,
-  useRag, setUseRag, useWeb, setUseWeb, useMulti, setUseMulti, mode, setMode,
-  models, manualModel, setManualModel,
+  useRag, setUseRag = () => {}, useWeb, setUseWeb = () => {},
+  useMulti = false, setUseMulti = () => {}, mode, setMode = () => {},
+  models = [], manualModel, setManualModel = () => {},
 }) {
   const fileRef = useRef(null);
   const [modelOpen, setModelOpen] = useState(false);

@@ -1,0 +1,14 @@
+{
+  "summary": "Frontend-only re-verification after cache clear + defensive default props in InputBar. Loaded app fresh, no runtime overlay. Clicked multi-toggle 4x — toggles yellow/inactive correctly. Clicked rag-toggle, web-toggle, mode-manual-btn, model-select-btn, mode-auto-btn — all without errors. Zero page/console errors captured. 'setUseMulti is not a function' NO LONGER OCCURS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "bundle_info": "Served bundle: https://rag-verify-ai.preview.emergentagent.com/static/js/bundle.js (webpack dev-server single bundle, freshly built — no stale hot-update chunk like main.faf772c7be90bf0bd2fc.hot-update.js was requested).",
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 9: setUseMulti error fully resolved. Toggle interactions (multi/rag/web/mode/model) all pass with 0 errors on fresh browser context. Bundle served is /static/js/bundle.js."
+}
