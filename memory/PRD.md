@@ -21,27 +21,25 @@ config, example prompts, clean UI, modular backend harness.
   router, rag, websearch, prompt_compiler, validator, pipeline`.
 - Collections: chats, messages, documents, document_chunks, model_runs.
 
-## Implemented (2026-06)
-- Chat UI: sidebar (new chat, history, documents, settings), streaming chat area,
-  input bar (upload, RAG toggle, internet toggle, Auto/Manual, manual model selector).
-- Harness pipeline: heuristic classifier → model router → TF-IDF RAG retrieval →
-  DuckDuckGo web verification → structured prompt compiler → streamed generation →
-  output validation → single self-repair pass. Metadata (model, category, confidence,
-  verify status, RAG/web flags, sources, harness trace) shown per answer.
-- Reliability / self-correction: all Ollama calls serialized (semaphore) with
-  retry/backoff on 429/403/5xx/timeout; automatic model fallback through
-  FALLBACK_MODELS when the routed model is unavailable; pipeline always emits a
-  terminal done/error; frontend watchdog + error handling (no infinite hang).
-- Model performance memory logged to model_runs; surfaced in Settings → Performance.
-- Deliverables: README.md, backend/.env.example, /api/config router config.
-- Tested: backend 100% (10/10), frontend 100% (iteration_2).
+## Implemented (2026-06 / 07)
+- Chat UI, sidebar, input bar (upload, RAG, internet, Auto/Manual, manual model selector).
+- Harness: hybrid intelligent classifier (heuristic + LLM refine) → diverse per-category
+  model router → TF-IDF RAG → DuckDuckGo web verify → prompt compiler → streamed
+  generation with automatic model fallback (self-correction) → independent cross-model
+  validation → self-repair. 403/subscription models fail-fast; calls serialized w/ retry.
+- Phase 3 Multi-model critique ENSEMBLE (opt-in 'Ensemble' toggle): draft (model A) →
+  critique (model B) → fact-check (model C) → finalize/synthesise (strongest model).
+  done event carries ensemble={drafter,critic,verifier,finalizer}; shown as badge + trace.
+- Model performance memory (model_runs) surfaced in Settings → Performance.
+- All 34 cloud models available in Manual selector.
+- Tested: iterations 1-7 pass (routing diversity, self-correction, independent validator, ensemble).
 
 ## Backlog / remaining
-- P1: Phase 3 multi-model critique (model A drafts, B critiques, C verifies).
 - P1: Use model_runs history to bias future routing (adaptive router).
-- P2: Persist retrieval scores/citations click-through; document-scoped RAG toggle.
-- P2: Full-content web extraction (currently uses search snippets only).
-- P2: Higher-tier Ollama key or client-side rate limiting to allow larger models.
+- P2: Auto-trigger ensemble for very hard queries (currently opt-in only).
+- P2: Full-content web extraction (currently uses search snippets).
+- P2: Grey-out subscription-locked models in the manual dropdown.
+- P2: Higher-tier Ollama key to unlock large models + reduce rate-limit fallback.
 
 ## Next tasks
-- Offer Phase 3 multi-model critique mode as an opt-in for "difficult" queries.
+- Adaptive routing from performance memory; optional auto-ensemble for hard queries.
