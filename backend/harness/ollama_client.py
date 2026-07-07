@@ -127,10 +127,14 @@ async def chat_stream(model, messages, options=None):
                                 data = json.loads(line)
                             except json.JSONDecodeError:
                                 continue
-                            piece = data.get("message", {}).get("content", "")
+                            msg = data.get("message", {})
+                            think = msg.get("thinking")
+                            if think:
+                                yield ("thinking", think)
+                            piece = msg.get("content", "")
                             if piece:
                                 produced = True
-                                yield piece
+                                yield ("content", piece)
                             if data.get("done"):
                                 return
                         return

@@ -166,6 +166,9 @@ export default function App() {
           } else if (evt.type === "token") {
             draft.content += evt.text;
             setStreamMsg({ ...draft });
+          } else if (evt.type === "thinking") {
+            draft.thinking = (draft.thinking || "") + evt.text;
+            setStreamMsg({ ...draft });
           } else if (evt.type === "replace") {
             draft.content = evt.text;
             setStreamMsg({ ...draft });

@@ -115,7 +115,10 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
             draft = ""
             produced = False
             try:
-                async for tok in ollama_client.chat_stream(cand, final_msgs):
+                async for kind, tok in ollama_client.chat_stream(cand, final_msgs):
+                    if kind == "thinking":
+                        yield {"type": "thinking", "text": tok}
+                        continue
                     produced = True
                     draft += tok
                     yield {"type": "token", "text": tok}
@@ -157,7 +160,10 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
             draft = ""
             produced = False
             try:
-                async for tok in ollama_client.chat_stream(cand, messages):
+                async for kind, tok in ollama_client.chat_stream(cand, messages):
+                    if kind == "thinking":
+                        yield {"type": "thinking", "text": tok}
+                        continue
                     produced = True
                     draft += tok
                     yield {"type": "token", "text": tok}
@@ -177,14 +183,10 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
                    "message": "All models are currently rate-limited or unavailable. Please retry in a moment."}
             return
 
-    # 7. Validate with an INDEPENDENT, auto-selected model (cross-model verification).
-    # (For ensemble mode the answer was already critiqued & fact-checked by other
-    #  models, so we use the lightweight heuristic check to avoid an extra call.)
-    deep = (
-        evidence_provided
-        or classification.get("category") in _DEEP_VALIDATE_CATEGORIES
-        or classification.get("reasoning_depth") == "high"
-    ) and not use_multi
+    # 7. Validate with an INDEPENDENT model — but ONLY when it matters (grounded
+    #    answers or high-stakes legal), to keep latency low. Other answers use the
+    #    fast heuristic check.
+    deep = (evidence_provided or classification.get("category") == "legal") and not use_multi
     validator_model = choose_validator(used_model, available)
     validation = None
     if deep:

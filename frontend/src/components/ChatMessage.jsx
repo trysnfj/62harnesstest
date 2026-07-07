@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Markdown } from "./Markdown";
 import {
   Cpu, Globe, FileText, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Wrench, ChevronDown, ChevronRight, User, Layers, ThumbsUp, ThumbsDown,
+  Wrench, ChevronDown, ChevronRight, User, Layers, ThumbsUp, ThumbsDown, Brain,
 } from "lucide-react";
 
 function VerifyBadge({ status, confidence }) {
@@ -61,6 +61,7 @@ function Sources({ sources }) {
 
 export function ChatMessage({ msg, streaming, onFeedback }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [showThinking, setShowThinking] = useState(!!streaming);
   const isUser = msg.role === "user";
   const meta = msg.meta;
 
@@ -100,6 +101,25 @@ export function ChatMessage({ msg, streaming, onFeedback }) {
             )}
             {meta.validator_model && meta.validator_model !== "heuristic" && (
               <Badge testid="validator-badge"><ShieldCheck className="w-3 h-3" /> Verified by {meta.validator_model}</Badge>
+            )}
+          </div>
+        )}
+
+        {msg.thinking && (
+          <div className="mb-2 border border-violet-200 rounded-sm bg-violet-50/50" data-testid="thinking-panel">
+            <button
+              data-testid="toggle-thinking"
+              onClick={() => setShowThinking((v) => !v)}
+              className="flex items-center gap-1.5 w-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-violet-600 hover:text-violet-800 transition-colors"
+            >
+              <Brain className="w-3 h-3" />
+              {streaming ? "Thinking…" : "Thought process"}
+              {showThinking ? <ChevronDown className="w-3 h-3 ml-auto" /> : <ChevronRight className="w-3 h-3 ml-auto" />}
+            </button>
+            {showThinking && (
+              <div className="px-3 pb-2 text-xs text-zinc-500 italic whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
+                {msg.thinking}
+              </div>
             )}
           </div>
         )}

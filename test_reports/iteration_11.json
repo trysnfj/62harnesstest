@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 11: Verified SHOW-THINKING feature and SPEED regression. Backend: 3/3 new tests pass — gpt-oss:20b emits multiple thinking SSE events followed by tokens/done; AUTO simple prompt '17*24' returns 408 with validator_model='heuristic' (fast path, no deep validation LLM call); web-mode retains real validator/sources. Frontend: thinking-panel appears above the answer for reasoning prompt in Manual mode with gpt-oss:20b, toggle-thinking collapses/expands correctly, final answer renders below, zero console/page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_thinking_speed.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "harness/pipeline.py: gating deep validation on evidence_provided or category=='legal' is a sensible speed win; consider also gating on message length or a low-confidence heuristic if drafter self-verify confidence is low so uncertain non-grounded answers still get a second opinion.",
+    "ChatMessage.jsx thinking-panel: default-open state on newly streaming assistant messages could be considered so users see reasoning live (currently opens/closes fine but initial state should be verified matches product intent)."
+  ],
+  "updated_files": ["/app/backend/tests/test_thinking_speed.py"],
+  "success_rate": {"backend": "100% (3/3 new + prior 9/9 unchanged)", "frontend": "100%"},
+  "verified_behaviors": {
+    "thinking_stream_backend": "manual gpt-oss:20b prompt emits >=1 (typically many) {type:'thinking'} events before {type:'token'} tokens and a final {type:'done'}. Combined thinking text non-trivial (>10 chars).",
+    "speed_regression": "AUTO 'What is 17 times 24?' completes in ~few seconds; done.validator_model=='heuristic'; answer contains '408'.",
+    "grounded_validation_kept": "AUTO use_web=true 'capital of France' completes; returns validator_model (real or heuristic if web found nothing) plus content — spec-allowed either real validator or sources.",
+    "frontend_thinking_ui": "Manual mode + gpt-oss:20b: data-testid='thinking-panel' rendered with data-testid='toggle-thinking'; toggle collapses text (82 chars visible → 9) and re-expands. verify-badge (final answer completion) appears; body contains '0.05' (correct ball price). No console or page errors."
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 11 backend suite is /app/backend/tests/test_thinking_speed.py. Requires REACT_APP_BACKEND_URL exported when running pytest (frontend/.env is source of truth: https://rag-verify-ai.preview.emergentagent.com). model-option testid contains a colon; use CSS attribute selector '[data-testid=\"model-option-gpt-oss:20b\"]' rather than get_by_test_id. Ollama is rate-limited; keep single-prompt timeouts >=90s and web-mode 120s+."
+}
