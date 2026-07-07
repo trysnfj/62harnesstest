@@ -29,9 +29,9 @@ _DEEP_VALIDATE_CATEGORIES = {
 async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, chunk_docs):
     has_docs = bool(chunk_docs)
 
-    # 1. Classify (heuristic, no LLM call)
-    yield {"type": "status", "stage": "classify", "message": "Classifying your request..."}
-    classification = classifier.classify(user_message, has_docs=has_docs, web_enabled=use_web)
+    # 1. Classify (intelligent LLM classification, heuristic fallback)
+    yield {"type": "status", "stage": "classify", "message": "Understanding & classifying your request..."}
+    classification = await classifier.classify(user_message, has_docs=has_docs, web_enabled=use_web)
 
     # 2. Route
     model, role, route_reason = router.route(
