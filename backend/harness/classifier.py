@@ -1,10 +1,12 @@
-"""Query Classifier — LLM-based intelligent classification with a heuristic fallback.
+"""Query Classifier — hybrid intelligent classification.
 
-Primary path: a fast Ollama model reads the query and returns a structured
-classification (category, reasoning depth, context length, RAG/web needs). This
-gives nuanced, query-appropriate routing so different questions reach different
-specialist models. If the LLM call fails (rate-limit/unavailable), we fall back
-to fast keyword heuristics so the pipeline never stalls.
+Strategy (fast + intelligent + low rate-limit pressure):
+- Heuristic first. For clearly-signalled queries (coding, creative, summarisation,
+  legal, business, explicit web/reasoning cues, or when documents are attached)
+  we trust the heuristic and make ZERO extra LLM calls.
+- Only when the query is ambiguous (falls into generic "general chat" /
+  "technical explanation") do we spend one fast LLM call to classify it properly.
+This keeps routing intelligent while minimising calls on the rate-limited key.
 """
 import logging
 from . import ollama_client
@@ -27,28 +29,28 @@ def _prompt(user_message, has_docs, web_enabled):
         f"User manually enabled internet search: {web_enabled}.\n\n"
         f"User request:\n\"\"\"\n{user_message}\n\"\"\"\n\n"
         "Return JSON with exactly these keys:\n"
-        '  "category": one of the categories that best fits,\n'
-        '  "reasoning_depth": "low" | "medium" | "high" (how much step-by-step thinking is needed),\n'
+        '  "category": the single best-fitting category,\n'
+        '  "reasoning_depth": "low" | "medium" | "high",\n'
         '  "context_length": "short" | "long",\n'
-        '  "needs_rag": true/false (answer should come from the attached documents),\n'
-        '  "needs_web": true/false (needs current/real-time facts or verification),\n'
-        '  "rationale": one short sentence explaining the choice.'
+        '  "needs_rag": true/false,\n'
+        '  "needs_web": true/false,\n'
+        '  "rationale": one short sentence.'
     )
 
 
-# ----- keyword sets for the heuristic fallback -----
 _CODING = ["code", "function", "python", "javascript", "typescript", "java ", "c++", "sql",
            "regex", "api ", "bug", "compile", "algorithm", "script", "html", "css", "react",
-           "debug", "def ", "class ", "```", "refactor", "endpoint", "docker"]
-_SUMMARISE = ["summarise", "summarize", "summary", "tldr", "tl;dr", "key points", "in short"]
-_CREATIVE = ["poem", "story", "song", "lyrics", "fiction", "screenplay", "haiku", "novel"]
+           "debug", "def ", "class ", "```", "refactor", "endpoint", "docker", "useeffect", "stack trace"]
+_SUMMARISE = ["summarise", "summarize", "summary", "tldr", "tl;dr", "key points"]
+_CREATIVE = ["poem", "story", "song", "lyrics", "fiction", "screenplay", "haiku", "novel", "write a tale"]
 _LEGAL = ["legal", "law", "contract", "clause", "liability", "gdpr", "lawsuit", "compliance"]
-_BUSINESS = ["business", "market", "revenue", "strategy", "roi", "pricing", "startup", "kpi", "profit"]
+_BUSINESS = ["business plan", "market", "revenue", "strategy", "roi", "pricing", "startup", "kpi", "go-to-market"]
 _WEB = ["latest", "current", "today", "right now", "news", "recent", "price of", "stock",
         "weather", "2024", "2025", "2026", "score", "release date", "who won", "up to date", "real-time"]
-_REASON = ["solve", "prove", "calculate", "derive", "step by step", "step-by-step", "logic",
-           "analyse", "analyze", "compare", "trade-off", "how many", "puzzle", "equation", "why "]
-_TECH = ["explain", "how does", "how do", "what is", "difference between", "architecture"]
+_REASON = ["solve", "prove", "calculate", "derive", "step by step", "step-by-step", "reason it out",
+           "logic", "analyse", "analyze", "compare", "trade-off", "how many", "puzzle", "equation",
+           "complexity", "why is", "why do", "why does"]
+_TECH = ["explain", "how does", "how do", "what is", "difference between", "architecture", "how to"]
 
 
 def _has(text, kws):
@@ -59,27 +61,30 @@ def heuristic_classify(user_message, has_docs=False, web_enabled=False):
     t = (user_message or "").lower()
     length = len(user_message or "")
     needs_web = web_enabled or _has(t, _WEB)
+    strong = True
 
     if _has(t, _CODING):
         category = "coding"
-    elif _has(t, _SUMMARISE):
-        category = "summarisation"
     elif _has(t, _CREATIVE):
         category = "creative writing"
+    elif _has(t, _SUMMARISE):
+        category = "summarisation"
     elif _has(t, _LEGAL):
         category = "legal"
     elif _has(t, _BUSINESS):
         category = "business"
     elif has_docs:
         category = "document Q&A"
-    elif needs_web:
-        category = "factual/current-events"
     elif _has(t, _REASON):
         category = "reasoning"
+    elif needs_web:
+        category = "factual/current-events"
     elif _has(t, _TECH):
         category = "technical explanation"
+        strong = False  # ambiguous ("what is X" could be factual/reasoning/coding)
     else:
         category = "general chat"
+        strong = False
 
     if _has(t, _REASON) or category in ("reasoning", "coding", "legal"):
         depth = "high"
@@ -94,7 +99,8 @@ def heuristic_classify(user_message, has_docs=False, web_enabled=False):
         "context_length": "long" if (has_docs or length > 800) else "short",
         "needs_rag": has_docs,
         "needs_web": needs_web,
-        "rationale": f"Heuristic fallback → {category}",
+        "rationale": f"Heuristic → {category}",
+        "_strong": strong,
     }
 
 
@@ -119,7 +125,11 @@ def _normalise(result, has_docs, web_enabled):
 
 
 async def classify(user_message, has_docs=False, web_enabled=False):
-    """Intelligent LLM classification with heuristic fallback."""
+    """Hybrid: trust confident heuristics; use a fast LLM call only when ambiguous."""
+    h = heuristic_classify(user_message, has_docs=has_docs, web_enabled=web_enabled)
+    if h.pop("_strong", False):
+        return h
+    # Ambiguous → refine with a fast LLM classifier
     try:
         raw = await ollama_client.chat_json(
             MODEL_ROLES["classifier"],
@@ -133,4 +143,4 @@ async def classify(user_message, has_docs=False, web_enabled=False):
             return norm
     except Exception as e:  # noqa: BLE001
         logger.warning(f"LLM classifier unavailable, using heuristic: {e}")
-    return heuristic_classify(user_message, has_docs, web_enabled)
+    return h

@@ -22,7 +22,8 @@ from .config import build_candidates, choose_validator
 logger = logging.getLogger(__name__)
 
 _DEEP_VALIDATE_CATEGORIES = {
-    "reasoning", "factual/current-events", "research", "document Q&A", "legal", "business",
+    "reasoning", "factual/current-events", "research", "document Q&A",
+    "legal", "business", "technical explanation",
 }
 
 
@@ -104,7 +105,11 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
     # 7. Validate with an INDEPENDENT, auto-selected model (cross-model verification)
     citations_required = bool(sources)
     evidence_provided = bool(retrieved or web_evidence)
-    deep = evidence_provided or classification.get("category") in _DEEP_VALIDATE_CATEGORIES
+    deep = (
+        evidence_provided
+        or classification.get("category") in _DEEP_VALIDATE_CATEGORIES
+        or classification.get("reasoning_depth") == "high"
+    )
     validator_model = choose_validator(used_model, available)
     validation = None
     if deep:

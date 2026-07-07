@@ -133,7 +133,7 @@ export default function App() {
     let watchdog = null;
     const resetWatchdog = () => {
       if (watchdog) clearTimeout(watchdog);
-      watchdog = setTimeout(() => { errored = true; controller.abort(); }, 150000);
+      watchdog = setTimeout(() => { errored = true; controller.abort(); }, 240000);
     };
     resetWatchdog();
 

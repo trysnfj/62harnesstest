@@ -18,7 +18,7 @@ MODEL_ROLES = {
     "legal": "glm-4.7",
     "business": "nemotron-3-super",
     "technical": "gpt-oss:20b",
-    "classifier": "gpt-oss:20b",     # fast, instruction-following router brain
+    "classifier": "gemma3:12b",      # fastest model for the router brain
     "validator": "glm-4.7",          # default validator
 }
 

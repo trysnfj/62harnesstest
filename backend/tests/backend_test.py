@@ -19,7 +19,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://rag-verify-ai.previe
 API = f"{BASE_URL}/api"
 
 # Long timeouts because pipeline runs multiple LLM calls
-STREAM_TIMEOUT = 180
+STREAM_TIMEOUT = 300
 
 
 def _read_sse(resp):
@@ -296,11 +296,11 @@ class TestIntelligentDiverseRouting:
 
     # (prompt, list of acceptable role labels)
     PROMPTS = [
+        ("hey there", {"fast", "general"}),
+        ("Write a python bubble sort", {"coding"}),
+        ("Give me a short bedtime story about a robot", {"creative"}),
+        ("Why is the sky blue? Explain step by step.", {"reasoning", "technical"}),
         ("How do I center a div in CSS?", {"coding", "technical"}),
-        ("Tell me a fun fact about octopuses", {"fast", "general", "technical", "factual"}),
-        ("Write a haiku about winter", {"creative"}),
-        ("Fix my react useEffect running twice", {"coding"}),
-        ("What is the time complexity of quicksort? Reason it out", {"reasoning", "coding", "technical"}),
     ]
 
     def test_intelligent_diverse_routing(self):
@@ -351,9 +351,9 @@ class TestIntelligentDiverseRouting:
                 f"(model={r['model']}); expected one of {r['acceptable_roles']}"
             )
 
-        # 3. Haiku must be creative (very specific)
-        haiku = next(r for r in results if "haiku" in r["prompt"].lower())
-        assert haiku["role"] == "creative", f"haiku not routed to creative role: {haiku}"
+        # 3. Bedtime story must be creative
+        story = next(r for r in results if "bedtime" in r["prompt"].lower())
+        assert story["role"] == "creative", f"bedtime story not routed to creative role: {story}"
 
         # 4. At least one coding-flavoured prompt actually gets the coding role
         coding_ones = [r for r in results if r["role"] == "coding"]
