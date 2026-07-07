@@ -14,6 +14,7 @@ import {
 const STAGE_LABEL = {
   classify: "Classifying", route: "Routing", retrieve: "Retrieving docs",
   search: "Searching web", generate: "Generating", validate: "Validating", repair: "Repairing",
+  escalate: "Boosting verification",
   draft: "Drafting (model A)", critique: "Critiquing (model B)",
   factcheck: "Fact-checking (model C)", finalize: "Finalizing (best model)",
 };

@@ -174,40 +174,48 @@ async def _load_chunks_for_chat(chat_id):
     return chunks
 
 
-def _run_reward(r):
-    """Reward signal for RL routing: validation confidence, repair penalty, user feedback."""
-    reward = r.get("confidence", 50) / 100.0
+def _info_quality(r):
+    """Reward = INFORMATION quality of the answer (not the model).
+    Combines validation confidence, penalties for needing repair / uncertainty,
+    and the user's 👍/👎 on the information provided. Range ~[-0.8, 1.5]."""
+    q = r.get("confidence", 50) / 100.0
     if r.get("repaired"):
-        reward -= 0.3
+        q -= 0.2                       # needed correction => weaker first-pass info
+    if r.get("verify_status") == "UNCERTAIN":
+        q -= 0.2
     fb = r.get("feedback")
     if fb == "up":
-        reward += 0.6
+        q += 0.5                       # user confirmed the info was good
     elif fb == "down":
-        reward -= 0.8
-    return reward
+        q -= 0.8                       # user said the info was bad
+    return q
 
 
-async def compute_learned_routes(min_runs=2):
-    """Reinforcement learning: pick the best-performing model per category from
-    accumulated reward signals (validation + user feedback)."""
+async def compute_quality_memory(min_runs=3, escalate_below=0.55):
+    """Reinforcement over INFORMATION quality (per topic, not per model).
+    Topics whose answers historically score low get flagged for escalation so
+    the harness grounds & verifies them harder next time."""
     runs = await db.model_runs.find({}, {"_id": 0}).to_list(5000)
-    agg = {}
+    by_cat = {}
     for r in runs:
-        key = (r.get("category"), r.get("model"))
-        if not key[0] or not key[1]:
+        cat = r.get("category")
+        if not cat:
             continue
-        d = agg.setdefault(key, {"sum": 0.0, "n": 0})
-        d["sum"] += _run_reward(r)
+        d = by_cat.setdefault(cat, {"sum": 0.0, "n": 0, "up": 0, "down": 0})
+        d["sum"] += _info_quality(r)
         d["n"] += 1
-    best = {}
-    for (cat, model), d in agg.items():
-        if d["n"] < min_runs:
-            continue
-        mean = d["sum"] / d["n"]
-        cur = best.get(cat)
-        if cur is None or mean > cur[1]:
-            best[cat] = (model, mean)
-    return {cat: v[0] for cat, v in best.items()}
+        if r.get("feedback") == "up":
+            d["up"] += 1
+        elif r.get("feedback") == "down":
+            d["down"] += 1
+    quality = {}
+    escalate = []
+    for cat, d in by_cat.items():
+        mean = round(d["sum"] / d["n"], 3) if d["n"] else 0
+        quality[cat] = {"info_quality": mean, "runs": d["n"], "up": d["up"], "down": d["down"]}
+        if d["n"] >= min_runs and (mean < escalate_below or d["down"] > d["up"]):
+            escalate.append(cat)
+    return {"by_category": quality, "escalate": escalate}
 
 
 class Feedback(BaseModel):
@@ -245,7 +253,7 @@ async def chat_stream(body: SendMessage):
         await db.chats.update_one({"id": body.chat_id}, {"$set": {"updated_at": now_iso()}})
 
     chunk_docs = await _load_chunks_for_chat(body.chat_id) if body.use_rag else []
-    learned_routes = await compute_learned_routes()
+    quality_memory = await compute_quality_memory()
 
     async def event_gen():
         final_meta = None
@@ -260,7 +268,7 @@ async def chat_stream(body: SendMessage):
                 use_web=body.use_web,
                 use_multi=body.use_multi,
                 chunk_docs=chunk_docs,
-                learned_routes=learned_routes,
+                quality_memory=quality_memory,
             ):
                 if event["type"] == "done":
                     event["message_id"] = assistant_id
@@ -323,8 +331,9 @@ async def stats():
             d["down"] += 1
     for m, d in by_model.items():
         d["avg_confidence"] = round(d["avg_confidence"] / d["runs"], 1) if d["runs"] else 0
-    learned = await compute_learned_routes()
-    return {"total_runs": len(runs), "by_model": by_model, "learned_routes": learned}
+    learned = await compute_quality_memory()
+    return {"total_runs": len(runs), "by_model": by_model,
+            "info_quality": learned["by_category"], "escalated": learned["escalate"]}
 
 
 app.include_router(api_router)

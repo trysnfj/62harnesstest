@@ -79,17 +79,30 @@ export function SettingsDialog({ open, onClose }) {
                 <BarChart3 className="w-4 h-4" />
                 Model performance memory — {stats?.total_runs || 0} total runs logged
               </div>
-              {stats?.learned_routes && Object.keys(stats.learned_routes).length > 0 && (
-                <div className="border border-emerald-200 bg-emerald-50/50 rounded-sm p-3" data-testid="learned-routes">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-700 mb-1">
-                    Reinforcement-learned routes (from feedback + validation)
+              {stats?.info_quality && Object.keys(stats.info_quality).length > 0 && (
+                <div className="border border-zinc-200 rounded-sm p-3" data-testid="info-quality">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-2">
+                    Information quality by topic (reinforcement signal)
                   </div>
-                  <div className="space-y-0.5">
-                    {Object.entries(stats.learned_routes).map(([cat, model]) => (
-                      <div key={cat} className="text-xs font-mono text-zinc-700">
-                        {cat} → <span className="text-emerald-700">{model}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-1">
+                    {Object.entries(stats.info_quality).map(([cat, d]) => {
+                      const esc = (stats.escalated || []).includes(cat);
+                      const pct = Math.max(0, Math.min(100, Math.round(d.info_quality * 100)));
+                      return (
+                        <div key={cat} className="text-xs font-mono flex items-center gap-2">
+                          <span className="w-40 truncate text-zinc-600">{cat}</span>
+                          <div className="flex-1 h-2 bg-zinc-100 rounded-sm overflow-hidden">
+                            <div className={`h-full ${esc ? "bg-yellow-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-zinc-500 w-10 text-right">{pct}%</span>
+                          <span className="text-zinc-400 w-24 text-right">👍{d.up} 👎{d.down} · {d.runs}r</span>
+                          {esc && <span className="text-yellow-600" title="Auto-escalated: grounds & verifies harder">⤴ verify+</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 mt-2">
+                    Low-scoring topics (yellow / more 👎) are auto-escalated: the harness adds web grounding and stricter independent verification — it improves the <strong>information</strong>, it does not favour any model.
                   </div>
                 </div>
               )}

@@ -16,7 +16,6 @@ Yields SSE-friendly event dicts:
   {"type": "error", "message": ...}
 """
 import logging
-import random
 from . import classifier, router, rag, websearch, prompt_compiler, validator, ollama_client, critique
 from .config import build_candidates, choose_validator, pick_ensemble
 
@@ -28,23 +27,38 @@ _DEEP_VALIDATE_CATEGORIES = {
 }
 
 
-async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, use_multi, chunk_docs, learned_routes=None):
+_WEB_ELIGIBLE = {
+    "factual/current-events", "research", "technical explanation", "reasoning", "business",
+}
+
+
+async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, use_multi, chunk_docs, quality_memory=None):
     has_docs = bool(chunk_docs)
+    quality_memory = quality_memory or {}
+    escalate_cats = set(quality_memory.get("escalate", []))
 
     # 1. Classify (intelligent LLM classification, heuristic fallback)
     yield {"type": "status", "stage": "classify", "message": "Understanding & classifying your request..."}
     classification = await classifier.classify(user_message, has_docs=has_docs, web_enabled=use_web)
+    category = classification.get("category", "general chat")
 
-    # 2. Route (with reinforcement-learned preference + epsilon exploration)
-    explore = random.random() < 0.2
+    # 2. Route to the best SPECIALIST for the task (deterministic — we do NOT
+    #    favour a model based on feedback; feedback improves the *information*).
     model, role, route_reason = router.route(
         classification, mode=mode, manual_model=manual_model, use_rag=use_rag, use_web=use_web,
-        learned_routes=learned_routes, explore=explore,
     )
     yield {
         "type": "meta", "classification": classification,
         "model": model, "role": role, "route_reason": route_reason,
     }
+
+    # Information-quality escalation (the reinforcement signal): if answers for
+    # this topic have historically scored poorly (low confidence / repairs / 👎),
+    # we work HARDER on the information — add web grounding + strict validation.
+    escalate = category in escalate_cats
+    if escalate:
+        yield {"type": "status", "stage": "escalate",
+               "message": f"Past '{category}' answers scored low — grounding & verifying more strictly..."}
 
     # 3. RAG retrieval
     retrieved = []
@@ -52,9 +66,9 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
         yield {"type": "status", "stage": "retrieve", "message": "Retrieving relevant document passages..."}
         retrieved = rag.retrieve(user_message, chunk_docs, top_k=4)
 
-    # 4. Internet verification
+    # 4. Internet verification (also triggered by low-quality escalation for web-eligible topics)
     web_evidence = []
-    if use_web or classification.get("needs_web"):
+    if use_web or classification.get("needs_web") or (escalate and category in _WEB_ELIGIBLE):
         yield {"type": "status", "stage": "search", "message": "Searching the web for verification..."}
         web_evidence = await websearch.search(user_message, max_results=5)
 
@@ -183,10 +197,9 @@ async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, us
                    "message": "All models are currently rate-limited or unavailable. Please retry in a moment."}
             return
 
-    # 7. Validate with an INDEPENDENT model — but ONLY when it matters (grounded
-    #    answers or high-stakes legal), to keep latency low. Other answers use the
-    #    fast heuristic check.
-    deep = (evidence_provided or classification.get("category") == "legal") and not use_multi
+    # 7. Validate with an INDEPENDENT model — for grounded answers, legal, or any
+    #    topic flagged low-quality by the reinforcement signal (verify the information).
+    deep = (evidence_provided or category == "legal" or escalate) and not use_multi
     validator_model = choose_validator(used_model, available)
     validation = None
     if deep:

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 12: RL over INFORMATION QUALITY verified end-to-end. Backend 6/6 new tests pass — /api/stats returns info_quality (per-category {info_quality, runs, up, down}) + escalated[] and NO learned_routes; deterministic routing sends 'add two numbers' to a coding/reasoning specialist (qwen3-coder:480b) while 'hi' goes to fast/general (minimax-m2.5) — distinct models per category; /api/feedback 'down' returns {ok:true} and increments that category's down count; invalid rating -> 400; simple AUTO prompt validator_model=='heuristic' (speed path intact); web AUTO still runs. Frontend: Settings→Performance shows the new info-quality panel (data-testid='info-quality') with per-topic quality bars and 👍/👎 counts (e.g. general chat 95% 👍3 👎2 · 67r; factual/current-events 71% 👍1 👎1 · 12r). No 'learned-routes' testid present. Feedback thumbs (feedback-up/feedback-down) work, no console/page errors, escalated list currently [] which is acceptable per spec.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Feedback toast", "issues": ["Toast text after 👍/👎 still reads 'Noted — the router will learn from this'. Routing is now deterministic; the reinforcement signal improves *information* (grounding/verification), not the router. Suggest rewording to e.g. 'Noted — this will improve future answers for this topic.'"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_info_quality_rl.py",
+    "/app/test_reports/pytest/iter12_results.xml"
+  ],
+  "action_items": [
+    "(Optional/minor) Update the post-feedback toast copy in the frontend to reflect that feedback improves information quality per topic, not model routing."
+  ],
+  "critical_code_review_comments": [
+    "server.py compute_quality_memory: escalate threshold uses min_runs=3 which is fine, but info_quality mean can exceed 1.0 (up-vote adds +0.5) and be clamped to 100% in UI — consider clipping to [0,1] before display for consistency.",
+    "harness/pipeline.py: escalate now forces web grounding + deep validation; ensure websearch failures degrade gracefully (already logged) so an escalated category doesn't hang if DDG is rate-limited.",
+    "SettingsDialog.jsx: info_quality bar caps at 100% but a category with many 👍 can compute >1.0 — visually fine due to clamp but the numeric text will read 100% for both 0.95 and 1.5 raw. Consider also showing raw score."
+  ],
+  "updated_files": ["/app/backend/tests/test_info_quality_rl.py"],
+  "success_rate": {"backend": "100% (6/6 new)", "frontend": "100%"},
+  "verified_behaviors": {
+    "stats_shape": "info_quality (dict cat->{info_quality,runs,up,down}) + escalated [] present; learned_routes REMOVED; by_model retained with up/down.",
+    "deterministic_routing": "coding prompt -> role in {coding, technical, reasoning}, general 'hi' -> role in {fast, general}; distinct models between the two categories.",
+    "feedback_flow": "POST /api/feedback rating='down' -> 200 {ok:true}; category down count incremented in stats; rating='meh' -> 400.",
+    "speed_path": "AUTO 'hey!' -> validator_model=='heuristic' (no deep validation LLM call).",
+    "web_path": "AUTO use_web=true 'capital of France' completes; when used_web true validator is real (not heuristic) and differs from drafter.",
+    "escalation_mechanism": "escalated field present in stats and consumed by pipeline (category in quality_memory['escalate'] -> web grounding + deep validation). No categories currently below 0.55 mean, so escalated=[] — mechanism verified structurally.",
+    "frontend_info_quality_panel": "Settings-tab-performance shows data-testid='info-quality' with per-topic bars, 👍/👎 counts, and runs. learned-routes testid absent. feedback-up/down clickable, success toast appears, zero page/console errors."
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 12 test suite: /app/backend/tests/test_info_quality_rl.py. Prior suites remain valid. When running pytest export REACT_APP_BACKEND_URL. UI: Settings dialog is opened via the 'Settings & Router' button in the sidebar; use force=True on the tab click. feedback-up / feedback-down testids exist per assistant message."
+}
