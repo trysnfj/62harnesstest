@@ -1,0 +1,18 @@
+{
+  "summary": "Verified bug fix for 'setUseMulti is not a function' runtime error. Clicked multi-toggle 3x, plus rag/web/mode-manual/mode-auto toggles. Model selector appeared on manual. Sent 'hi' with Ensemble ON to confirm request starts cleanly. Zero page errors or console errors captured. No webpack error overlay.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 8: setUseMulti runtime error confirmed fixed via UI test. All InputBar toggles functional. Ensemble smoke send starts cleanly (stage indicator visible)."
+}
