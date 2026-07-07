@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 10: Verified date-bug fix, /api/feedback endpoint, RL learned_routes in /api/stats, and frontend feedback UI + Settings Performance panel. 9/9 backend tests pass; frontend flow works with 0 console/page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_feedback_rl.py", "/app/test_reports/pytest/iter10_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_feedback_rl.py originally too strict on role literal — real backend now returns 'coding (learned)' when RL exploit picks the learned model. Not a bug; test fixed to substring match."
+  ],
+  "updated_files": ["/app/backend/tests/test_feedback_rl.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100%"},
+  "verified_behaviors": {
+    "date_bug_fix": "POST /api/chat/stream with 'What is today's date?' returned a real date containing '2026' and no refusal phrases; done event includes message_id.",
+    "feedback_endpoint": "POST /api/feedback rating=up -> {ok:true}; rating=down -> {ok:true}; rating='meh' -> HTTP 400.",
+    "learned_routes": "/api/stats returns total_runs=161, by_model with runs/avg_confidence/repairs/up/down per model, and learned_routes populated (general chat, technical explanation, document Q&A, coding, reasoning, creative writing, summarisation, legal, factual/current-events).",
+    "up_reflected": "After posting 'up' feedback, by_model[model].up increments by exactly 1.",
+    "regressions": "Coding prompt (use_multi=false) completed via coding-capable model ('coding (learned)' role); 'hi' completed; use_multi=true ensemble completed with distinct drafter/critic/verifier/finalizer.",
+    "frontend": "feedback-controls appear on assistant reply; feedback-up click applies emerald highlight (bg-emerald-100 border-emerald-400) and triggers success toast; Settings > Performance tab shows learned-routes panel; 0 page errors, 0 console errors."
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_feedback_rl.py is the canonical RL/feedback/date suite. Ollama is rate-limited; run backend tests with xdist workers=2 (default). Ensemble test uses 200s timeout."
+}

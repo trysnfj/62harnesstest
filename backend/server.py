@@ -174,6 +174,59 @@ async def _load_chunks_for_chat(chat_id):
     return chunks
 
 
+def _run_reward(r):
+    """Reward signal for RL routing: validation confidence, repair penalty, user feedback."""
+    reward = r.get("confidence", 50) / 100.0
+    if r.get("repaired"):
+        reward -= 0.3
+    fb = r.get("feedback")
+    if fb == "up":
+        reward += 0.6
+    elif fb == "down":
+        reward -= 0.8
+    return reward
+
+
+async def compute_learned_routes(min_runs=2):
+    """Reinforcement learning: pick the best-performing model per category from
+    accumulated reward signals (validation + user feedback)."""
+    runs = await db.model_runs.find({}, {"_id": 0}).to_list(5000)
+    agg = {}
+    for r in runs:
+        key = (r.get("category"), r.get("model"))
+        if not key[0] or not key[1]:
+            continue
+        d = agg.setdefault(key, {"sum": 0.0, "n": 0})
+        d["sum"] += _run_reward(r)
+        d["n"] += 1
+    best = {}
+    for (cat, model), d in agg.items():
+        if d["n"] < min_runs:
+            continue
+        mean = d["sum"] / d["n"]
+        cur = best.get(cat)
+        if cur is None or mean > cur[1]:
+            best[cat] = (model, mean)
+    return {cat: v[0] for cat, v in best.items()}
+
+
+class Feedback(BaseModel):
+    message_id: str
+    rating: str  # "up" | "down"
+
+
+@api_router.post("/feedback")
+async def submit_feedback(body: Feedback):
+    if body.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
+    await db.model_runs.update_one({"message_id": body.message_id}, {"$set": {"feedback": body.rating}})
+    await db.messages.update_one({"id": body.message_id}, {"$set": {"feedback": body.rating}})
+    await db.feedback.insert_one({
+        "id": new_id(), "message_id": body.message_id, "rating": body.rating, "created_at": now_iso(),
+    })
+    return {"ok": True}
+
+
 @api_router.post("/chat/stream")
 async def chat_stream(body: SendMessage):
     # persist user message
@@ -192,9 +245,11 @@ async def chat_stream(body: SendMessage):
         await db.chats.update_one({"id": body.chat_id}, {"$set": {"updated_at": now_iso()}})
 
     chunk_docs = await _load_chunks_for_chat(body.chat_id) if body.use_rag else []
+    learned_routes = await compute_learned_routes()
 
     async def event_gen():
         final_meta = None
+        assistant_id = new_id()
         try:
             async for event in harness_pipeline.run_pipeline(
                 user_message=body.message,
@@ -205,8 +260,10 @@ async def chat_stream(body: SendMessage):
                 use_web=body.use_web,
                 use_multi=body.use_multi,
                 chunk_docs=chunk_docs,
+                learned_routes=learned_routes,
             ):
                 if event["type"] == "done":
+                    event["message_id"] = assistant_id
                     final_meta = event
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
@@ -216,7 +273,7 @@ async def chat_stream(body: SendMessage):
 
         if final_meta:
             assistant_msg = {
-                "id": new_id(), "chat_id": body.chat_id, "role": "assistant",
+                "id": assistant_id, "chat_id": body.chat_id, "role": "assistant",
                 "content": final_meta["content"], "created_at": now_iso(),
                 "meta": {
                     "model": final_meta["model"], "role": final_meta["role"],
@@ -230,14 +287,16 @@ async def chat_stream(body: SendMessage):
                 },
             }
             await db.messages.insert_one(dict(assistant_msg))
-            # Model Performance Memory log
+            # Model Performance Memory log (reward source for RL routing)
             await db.model_runs.insert_one({
-                "id": new_id(), "chat_id": body.chat_id, "created_at": now_iso(),
+                "id": new_id(), "message_id": assistant_msg["id"], "chat_id": body.chat_id,
+                "created_at": now_iso(),
                 "category": final_meta["category"], "model": final_meta["model"],
                 "role": final_meta["role"], "used_rag": final_meta["used_rag"],
                 "used_web": final_meta["used_web"], "repaired": final_meta["repaired"],
                 "confidence": final_meta["confidence"], "verify_status": final_meta["verify_status"],
                 "validation_issues": final_meta["validation"].get("issues", []),
+                "feedback": None,
             })
 
     return StreamingResponse(
@@ -254,13 +313,18 @@ async def stats():
     by_model = {}
     for r in runs:
         m = r["model"]
-        d = by_model.setdefault(m, {"runs": 0, "avg_confidence": 0, "repairs": 0})
+        d = by_model.setdefault(m, {"runs": 0, "avg_confidence": 0, "repairs": 0, "up": 0, "down": 0})
         d["runs"] += 1
         d["avg_confidence"] += r.get("confidence", 0)
         d["repairs"] += 1 if r.get("repaired") else 0
+        if r.get("feedback") == "up":
+            d["up"] += 1
+        elif r.get("feedback") == "down":
+            d["down"] += 1
     for m, d in by_model.items():
         d["avg_confidence"] = round(d["avg_confidence"] / d["runs"], 1) if d["runs"] else 0
-    return {"total_runs": len(runs), "by_model": by_model}
+    learned = await compute_learned_routes()
+    return {"total_runs": len(runs), "by_model": by_model, "learned_routes": learned}
 
 
 app.include_router(api_router)

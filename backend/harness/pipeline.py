@@ -16,6 +16,7 @@ Yields SSE-friendly event dicts:
   {"type": "error", "message": ...}
 """
 import logging
+import random
 from . import classifier, router, rag, websearch, prompt_compiler, validator, ollama_client, critique
 from .config import build_candidates, choose_validator, pick_ensemble
 
@@ -27,16 +28,18 @@ _DEEP_VALIDATE_CATEGORIES = {
 }
 
 
-async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, use_multi, chunk_docs):
+async def run_pipeline(*, user_message, history, mode, manual_model, use_rag, use_web, use_multi, chunk_docs, learned_routes=None):
     has_docs = bool(chunk_docs)
 
     # 1. Classify (intelligent LLM classification, heuristic fallback)
     yield {"type": "status", "stage": "classify", "message": "Understanding & classifying your request..."}
     classification = await classifier.classify(user_message, has_docs=has_docs, web_enabled=use_web)
 
-    # 2. Route
+    # 2. Route (with reinforcement-learned preference + epsilon exploration)
+    explore = random.random() < 0.2
     model, role, route_reason = router.route(
-        classification, mode=mode, manual_model=manual_model, use_rag=use_rag, use_web=use_web
+        classification, mode=mode, manual_model=manual_model, use_rag=use_rag, use_web=use_web,
+        learned_routes=learned_routes, explore=explore,
     )
     yield {
         "type": "meta", "classification": classification,

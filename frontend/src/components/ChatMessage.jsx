@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Markdown } from "./Markdown";
 import {
   Cpu, Globe, FileText, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Wrench, ChevronDown, ChevronRight, User, Layers,
+  Wrench, ChevronDown, ChevronRight, User, Layers, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 
 function VerifyBadge({ status, confidence }) {
@@ -59,7 +59,7 @@ function Sources({ sources }) {
   );
 }
 
-export function ChatMessage({ msg, streaming }) {
+export function ChatMessage({ msg, streaming, onFeedback }) {
   const [showDetails, setShowDetails] = useState(false);
   const isUser = msg.role === "user";
   const meta = msg.meta;
@@ -108,6 +108,31 @@ export function ChatMessage({ msg, streaming }) {
         {streaming && <span className="cursor-blink" />}
 
         {meta && <Sources sources={meta.sources} />}
+
+        {/* Feedback (reinforcement signal) — only on finalized messages */}
+        {meta && !streaming && onFeedback && (
+          <div className="flex items-center gap-2 mt-3" data-testid="feedback-controls">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">Helpful?</span>
+            <button
+              data-testid="feedback-up"
+              onClick={() => onFeedback(msg.id, "up")}
+              className={`p-1.5 border rounded-sm transition-all active:scale-95 ${
+                msg.feedback === "up" ? "bg-emerald-100 border-emerald-400 text-emerald-700" : "border-zinc-300 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              <ThumbsUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              data-testid="feedback-down"
+              onClick={() => onFeedback(msg.id, "down")}
+              className={`p-1.5 border rounded-sm transition-all active:scale-95 ${
+                msg.feedback === "down" ? "bg-red-100 border-red-400 text-red-700" : "border-zinc-300 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              <ThumbsDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Harness details */}
         {meta && (

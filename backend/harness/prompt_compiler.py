@@ -1,4 +1,5 @@
 """Prompt Compiler: builds a structured prompt before any model call."""
+from datetime import datetime, timezone
 
 
 def _history_summary(history, max_msgs=6):
@@ -19,8 +20,11 @@ def compile_prompt(user_message, classification, doc_chunks=None, web_evidence=N
     doc_chunks = doc_chunks or []
     web_evidence = web_evidence or []
 
+    now = datetime.now(timezone.utc)
     system_parts = [
         "You are a rigorous AI assistant operating inside a verification harness.",
+        f"- The current date and time is {now.strftime('%A, %d %B %Y, %H:%M')} UTC. "
+        "Treat this as the authoritative present moment; when asked the date/time, answer directly and confidently using it (no need to browse the web).",
         "Follow these rules strictly:",
         "- Answer clearly and in well-structured Markdown.",
         "- Be transparent about uncertainty; never invent facts, names, numbers, or citations.",

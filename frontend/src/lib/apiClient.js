@@ -58,6 +58,11 @@ export async function getStats() {
   return data;
 }
 
+export async function submitFeedback(messageId, rating) {
+  const { data } = await api.post("/feedback", { message_id: messageId, rating });
+  return data;
+}
+
 /**
  * Stream the harness pipeline. Calls onEvent(evt) for every SSE event.
  */

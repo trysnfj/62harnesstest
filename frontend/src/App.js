@@ -8,7 +8,7 @@ import { InputBar } from "@/components/InputBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import {
   listModels, listChats, createChat, deleteChat, getMessages,
-  listDocuments, uploadDocument, deleteDocument, streamChat,
+  listDocuments, uploadDocument, deleteDocument, streamChat, submitFeedback,
 } from "@/lib/apiClient";
 
 const STAGE_LABEL = {
@@ -104,6 +104,16 @@ export default function App() {
     toast.success("Document removed");
   };
 
+  const handleFeedback = async (messageId, rating) => {
+    setMessages((m) => m.map((x) => (x.id === messageId ? { ...x, feedback: rating } : x)));
+    try {
+      await submitFeedback(messageId, rating);
+      toast.success(rating === "up" ? "Thanks — the router will favour this model" : "Noted — the router will learn from this");
+    } catch (e) {
+      toast.error("Could not save feedback");
+    }
+  };
+
   const handleStop = () => {
     abortRef.current?.abort();
     setStreaming(false);
@@ -160,6 +170,7 @@ export default function App() {
             draft.content = evt.text;
             setStreamMsg({ ...draft });
           } else if (evt.type === "done") {
+            draft.id = evt.message_id || draft.id;
             draft.content = evt.content;
             draft.meta = {
               model: evt.model, role: evt.role, category: evt.category, route_reason: evt.route_reason,
@@ -277,7 +288,7 @@ export default function App() {
           ) : (
             <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
               {messages.map((m) => (
-                <ChatMessage key={m.id} msg={m} />
+                <ChatMessage key={m.id} msg={m} onFeedback={handleFeedback} />
               ))}
               {streamMsg && (
                 <>

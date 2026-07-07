@@ -79,6 +79,20 @@ export function SettingsDialog({ open, onClose }) {
                 <BarChart3 className="w-4 h-4" />
                 Model performance memory — {stats?.total_runs || 0} total runs logged
               </div>
+              {stats?.learned_routes && Object.keys(stats.learned_routes).length > 0 && (
+                <div className="border border-emerald-200 bg-emerald-50/50 rounded-sm p-3" data-testid="learned-routes">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-700 mb-1">
+                    Reinforcement-learned routes (from feedback + validation)
+                  </div>
+                  <div className="space-y-0.5">
+                    {Object.entries(stats.learned_routes).map(([cat, model]) => (
+                      <div key={cat} className="text-xs font-mono text-zinc-700">
+                        {cat} → <span className="text-emerald-700">{model}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {stats && Object.keys(stats.by_model || {}).length > 0 ? (
                 <div className="border border-zinc-200 rounded-sm overflow-hidden">
                   <table className="w-full text-sm">
